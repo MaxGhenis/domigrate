@@ -10,7 +10,6 @@
 
   // State
   let currentDomain = null;
-  let isAutonomousMode = false;
 
   // Initialize on page load
   if (document.readyState === 'loading') {
@@ -45,13 +44,7 @@
     // If orchestrator gives us an action, execute it
     if (response?.action && response.action !== 'none') {
       console.log(`🎯 Received action: ${response.action}`);
-      isAutonomousMode = true;
       await executeAction(response.action, response);
-    }
-
-    // Also create the manual overlay for non-autonomous use
-    if (!isAutonomousMode) {
-      createOverlay();
     }
 
     // Watch for SPA navigation
@@ -419,37 +412,7 @@
     }).observe(document.body, { subtree: true, childList: true });
   }
 
-  // ============ MANUAL OVERLAY (fallback) ============
-
-  let overlay = null;
-
-  function createOverlay() {
-    if (overlay || isAutonomousMode) return;
-
-    overlay = document.createElement('div');
-    overlay.id = 'domain-migrator-overlay';
-    overlay.innerHTML = `
-      <div class="dm-header">
-        <span class="dm-logo">🔄</span>
-        <span class="dm-title">Domain Migrator</span>
-        <button class="dm-minimize">−</button>
-      </div>
-      <div class="dm-content">
-        <div class="dm-domain-name">${currentDomain || 'GoDaddy'}</div>
-        <div class="dm-status">Ready</div>
-        <div class="dm-info" style="font-size: 11px; color: #888; margin-top: 8px;">
-          Open popup to start autonomous migration
-        </div>
-      </div>
-    `;
-    document.body.appendChild(overlay);
-
-    overlay.querySelector('.dm-minimize').addEventListener('click', () => {
-      overlay.classList.toggle('dm-minimized');
-    });
-  }
-
-  // Listen for status updates from background
+  // Listen for messages from background
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'statusUpdate') {
       console.log('📊 Status update:', message.status);

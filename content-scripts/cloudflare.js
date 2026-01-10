@@ -11,7 +11,6 @@
   // State
   let currentDomain = null;
   let accountId = null;
-  let isAutonomousMode = false;
 
   // Initialize on page load
   if (document.readyState === 'loading') {
@@ -47,7 +46,6 @@
     // If orchestrator gives us an action, execute it
     if (response?.action && response.action !== 'none') {
       console.log(`🎯 Received action: ${response.action}`);
-      isAutonomousMode = true;
       await executeAction(response.action, response);
     }
 

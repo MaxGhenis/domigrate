@@ -392,6 +392,16 @@ async function navigateTo(url) {
 // ============ CONTENT SCRIPT HANDLERS ============
 
 async function handlePageReady(tab, data) {
+  console.log(`   📄 Page ready: ${data.registrar} / ${data.pageType}`);
+
+  // Handle import scan - works even when orchestrator not running
+  if (orchestrator.pendingAction === 'scanForDomains' && tab?.id === orchestrator.activeTabId) {
+    console.log('   🔍 Triggering domain scan...');
+    orchestrator.pendingAction = null;
+    return { action: 'scanForDomains' };
+  }
+
+  // For other actions, orchestrator must be running
   if (!orchestrator.isRunning || orchestrator.isPaused) {
     return { action: 'none', reason: 'Not running' };
   }
@@ -399,8 +409,6 @@ async function handlePageReady(tab, data) {
   if (tab?.id !== orchestrator.activeTabId) {
     return { action: 'none', reason: 'Not active tab' };
   }
-
-  console.log(`   📄 Page ready: ${data.registrar} / ${data.pageType}`);
 
   const domain = orchestrator.currentDomain;
   const pendingAction = orchestrator.pendingAction;

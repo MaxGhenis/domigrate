@@ -29,18 +29,15 @@
   "content_scripts": [
     {
       "matches": ["https://dcc.godaddy.com/*", "https://www.godaddy.com/*", "https://godaddy.com/*"],
-      "js": ["content-scripts/godaddy.js"],
-      "css": ["content-scripts/overlay.css"]
+      "js": ["content-scripts/godaddy.js"]
     },
     {
       "matches": ["https://account.squarespace.com/*", "https://domains.squarespace.com/*"],
-      "js": ["content-scripts/squarespace.js"],
-      "css": ["content-scripts/overlay.css"]
+      "js": ["content-scripts/squarespace.js"]
     },
     {
       "matches": ["https://dash.cloudflare.com/*"],
-      "js": ["content-scripts/cloudflare.js"],
-      "css": ["content-scripts/overlay.css"]
+      "js": ["content-scripts/cloudflare.js"]
     }
   ],
   "icons": {
