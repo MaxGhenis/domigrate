@@ -268,19 +268,24 @@ describe('Promo Filtering', () => {
            lowerText.includes('get ') ||
            lowerText.includes('buy') ||
            lowerText.includes('safeguard') ||
+           lowerText.includes('ensure its authenticity') ||
+           lowerText.includes('protect your brand') ||
+           lowerText.includes('/yr') ||
+           lowerText.includes('/year') ||
            lowerText.includes('$');
   }
 
   // Pure function to filter domains from potential promo elements
   function filterPromoDomains(
-    elements: Array<{ href: string; parentText: string; text: string }>,
+    elements: Array<{ href: string; parentText: string; text: string; elementText?: string }>,
     hrefPattern: RegExp
   ): string[] {
     const domains: string[] = [];
 
     for (const el of elements) {
-      // Always check for promo first - even href matches can be promos!
-      if (isPromoRow(el.parentText)) {
+      // Check element's own text AND parent text for promo indicators
+      const combinedText = `${el.elementText || ''} ${el.parentText}`;
+      if (isPromoRow(combinedText)) {
         continue;
       }
 
@@ -365,6 +370,19 @@ describe('Promo Filtering', () => {
     const elements = [
       { href: '/portfolio/codestitch.dev', parentText: 'codestitch.dev Expires 2025', text: 'codestitch.dev' },
       { href: '/portfolio/codestitch.ai', parentText: 'Get codestitch.ai $12.99/yr', text: 'codestitch.ai' },
+    ];
+    const pattern = /\/portfolio\/([a-z0-9-]+\.[a-z]+)/i;
+
+    const result = filterPromoDomains(elements, pattern);
+    expect(result).toContain('codestitch.dev');
+    expect(result).not.toContain('codestitch.ai');
+  });
+
+  test('filters GoDaddy safeguard promo by element text', () => {
+    // Real GoDaddy promo: element text says "Get codestitch.ai" with "safeguard" nearby
+    const elements = [
+      { href: '/portfolio/codestitch.dev', parentText: '', text: 'codestitch.dev', elementText: 'codestitch.dev' },
+      { href: '', parentText: '', text: 'codestitch.ai', elementText: 'Get codestitch.ai To confidently safeguard your brand and ensure its authenticity!' },
     ];
     const pattern = /\/portfolio\/([a-z0-9-]+\.[a-z]+)/i;
 

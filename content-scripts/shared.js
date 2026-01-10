@@ -292,19 +292,26 @@ async function scanForDomainsAndReport(registrar, linkSelectors, hrefPattern) {
   const domainElements = document.querySelectorAll(linkSelectors.join(', '));
 
   for (const el of domainElements) {
-    // Check for promo indicators FIRST - even href matches can be promos!
-    const parent = el.closest('tr, li, .domain-row, [class*="domain-item"], [class*="card"], [class*="Card"]');
-    if (parent) {
-      const parentText = parent.textContent.toLowerCase();
-      const isPromo = parentText.includes('add to cart') ||
-                      parentText.includes('get ') ||
-                      parentText.includes('buy') ||
-                      parentText.includes('safeguard') ||
-                      parentText.includes('$');
+    // Get text from element itself AND any nearby parent
+    const elementText = el.textContent?.toLowerCase() || '';
+    const parent = el.closest('tr, li, div, section, [class*="row"], [class*="item"], [class*="card"]');
+    const parentText = parent?.textContent?.toLowerCase() || '';
+    const combinedText = `${elementText} ${parentText}`;
 
-      if (isPromo) {
-        continue; // Skip this element entirely
-      }
+    // Check for promo indicators - skip if found
+    const isPromo = combinedText.includes('add to cart') ||
+                    combinedText.includes('get ') ||
+                    combinedText.includes('buy ') ||
+                    combinedText.includes('safeguard') ||
+                    combinedText.includes('ensure its authenticity') ||
+                    combinedText.includes('protect your brand') ||
+                    combinedText.includes('/yr') ||
+                    combinedText.includes('/year') ||
+                    combinedText.includes('$');
+
+    if (isPromo) {
+      console.log(`Skipping promo element: ${el.textContent?.trim()?.substring(0, 50)}`);
+      continue;
     }
 
     const href = el.getAttribute('href') || '';
