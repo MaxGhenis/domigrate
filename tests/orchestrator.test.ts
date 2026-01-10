@@ -194,6 +194,170 @@ describe('Extract Domain from Path', () => {
   });
 });
 
+describe('Loop Detection', () => {
+  // Pure function to check if we should bail due to loop
+  function shouldBailOnLoop(
+    stateVisits: Record<string, number>,
+    domain: string,
+    state: string,
+    maxVisits: number = 5
+  ): boolean {
+    const stateKey = `${domain}:${state}`;
+    const visits = (stateVisits[stateKey] || 0) + 1;
+    return visits > maxVisits;
+  }
+
+  // Pure function to record a state visit
+  function recordStateVisit(
+    stateVisits: Record<string, number>,
+    domain: string,
+    state: string
+  ): Record<string, number> {
+    const stateKey = `${domain}:${state}`;
+    return {
+      ...stateVisits,
+      [stateKey]: (stateVisits[stateKey] || 0) + 1
+    };
+  }
+
+  test('does not bail on first visit', () => {
+    expect(shouldBailOnLoop({}, 'example.com', 'getting_auth')).toBe(false);
+  });
+
+  test('does not bail on visits under limit', () => {
+    const visits = { 'example.com:getting_auth': 4 };
+    expect(shouldBailOnLoop(visits, 'example.com', 'getting_auth')).toBe(false);
+  });
+
+  test('bails when visits exceed limit', () => {
+    const visits = { 'example.com:getting_auth': 5 };
+    expect(shouldBailOnLoop(visits, 'example.com', 'getting_auth')).toBe(true);
+  });
+
+  test('tracks different domains separately', () => {
+    const visits = { 'example.com:getting_auth': 5 };
+    expect(shouldBailOnLoop(visits, 'other.com', 'getting_auth')).toBe(false);
+  });
+
+  test('tracks different states separately', () => {
+    const visits = { 'example.com:getting_auth': 5 };
+    expect(shouldBailOnLoop(visits, 'example.com', 'adding_to_cloudflare')).toBe(false);
+  });
+
+  test('records state visits correctly', () => {
+    let visits: Record<string, number> = {};
+    visits = recordStateVisit(visits, 'example.com', 'getting_auth');
+    expect(visits['example.com:getting_auth']).toBe(1);
+
+    visits = recordStateVisit(visits, 'example.com', 'getting_auth');
+    expect(visits['example.com:getting_auth']).toBe(2);
+  });
+
+  test('respects custom max visits limit', () => {
+    const visits = { 'example.com:getting_auth': 2 };
+    expect(shouldBailOnLoop(visits, 'example.com', 'getting_auth', 3)).toBe(false);
+    expect(shouldBailOnLoop(visits, 'example.com', 'getting_auth', 2)).toBe(true);
+  });
+});
+
+describe('Promo Filtering', () => {
+  // Pure function to check if text indicates a promo/ad row
+  function isPromoRow(text: string): boolean {
+    const lowerText = text.toLowerCase();
+    return lowerText.includes('add to cart') ||
+           lowerText.includes('get ') ||
+           lowerText.includes('buy') ||
+           lowerText.includes('safeguard') ||
+           lowerText.includes('$');
+  }
+
+  // Pure function to filter domains from potential promo elements
+  function filterPromoDomains(
+    elements: Array<{ href: string; parentText: string; text: string }>,
+    hrefPattern: RegExp
+  ): string[] {
+    const domains: string[] = [];
+
+    for (const el of elements) {
+      // Primary: extract from href
+      const hrefMatch = el.href.match(hrefPattern);
+      if (hrefMatch) {
+        domains.push(hrefMatch[1].toLowerCase());
+        continue;
+      }
+
+      // Fallback: only if not a promo
+      if (!isPromoRow(el.parentText)) {
+        const textMatch = el.text.match(/^([a-z0-9][a-z0-9-]*\.[a-z]{2,})$/i);
+        if (textMatch) {
+          domains.push(textMatch[1].toLowerCase());
+        }
+      }
+    }
+
+    return [...new Set(domains)];
+  }
+
+  test('detects "add to cart" as promo', () => {
+    expect(isPromoRow('example.com Add to Cart')).toBe(true);
+  });
+
+  test('detects "get " as promo', () => {
+    expect(isPromoRow('Get codestitch.ai now!')).toBe(true);
+  });
+
+  test('detects "buy" as promo', () => {
+    expect(isPromoRow('Buy this domain')).toBe(true);
+  });
+
+  test('detects "safeguard" as promo', () => {
+    expect(isPromoRow('Safeguard your brand')).toBe(true);
+  });
+
+  test('detects price as promo', () => {
+    expect(isPromoRow('Only $9.99/year')).toBe(true);
+  });
+
+  test('does not flag normal domain rows', () => {
+    expect(isPromoRow('codestitch.dev Expires 2025-01-01')).toBe(false);
+  });
+
+  test('filters out promo domains from results', () => {
+    const elements = [
+      { href: '/portfolio/codestitch.dev', parentText: 'codestitch.dev Expires 2025', text: 'codestitch.dev' },
+      { href: '', parentText: 'Get codestitch.ai $12.99', text: 'codestitch.ai' },
+      { href: '/portfolio/example.com', parentText: 'example.com Active', text: 'example.com' },
+    ];
+    const pattern = /\/portfolio\/([a-z0-9-]+\.[a-z]+)/i;
+
+    const result = filterPromoDomains(elements, pattern);
+    expect(result).toContain('codestitch.dev');
+    expect(result).toContain('example.com');
+    expect(result).not.toContain('codestitch.ai');
+  });
+
+  test('prefers href extraction over text', () => {
+    const elements = [
+      { href: '/portfolio/real-domain.com', parentText: 'Get fake.com $9.99', text: 'fake.com' },
+    ];
+    const pattern = /\/portfolio\/([a-z0-9-]+\.[a-z]+)/i;
+
+    const result = filterPromoDomains(elements, pattern);
+    expect(result).toEqual(['real-domain.com']);
+  });
+
+  test('deduplicates domains', () => {
+    const elements = [
+      { href: '/portfolio/example.com', parentText: '', text: 'example.com' },
+      { href: '/portfolio/example.com', parentText: '', text: 'example.com' },
+    ];
+    const pattern = /\/portfolio\/([a-z0-9-]+\.[a-z]+)/i;
+
+    const result = filterPromoDomains(elements, pattern);
+    expect(result).toEqual(['example.com']);
+  });
+});
+
 describe('Statistics Calculation', () => {
   test('calculates correct stats for empty array', () => {
     expect(calculateStats([])).toEqual({ queued: 0, active: 0, complete: 0, error: 0 });
