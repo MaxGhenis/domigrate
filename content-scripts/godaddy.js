@@ -41,6 +41,7 @@
     const url = window.location.href;
     const path = window.location.pathname;
 
+    if (url.includes('/transfers')) return 'transfers'; // Detect transfers page to avoid loops
     if (url.includes('portfolio') && !path.includes('.')) return 'portfolio_list';
     if (url.includes('/settings') || url.includes('settings')) return 'domain_settings';
     if (url.includes('dnsmanagement') || url.includes('dns')) return 'dns_management';
@@ -93,8 +94,9 @@
     let authCode = findAuthCodeOnPage();
 
     if (!authCode) {
+      // Note: Don't include 'transfer' alone - it matches nav links
       const authButton = findButton([
-        'get authorization code', 'get auth code', 'authorization code', 'transfer', 'auth code'
+        'get authorization code', 'get auth code', 'authorization code', 'auth code', 'transfer out', 'transfer away'
       ]);
 
       if (authButton) {
