@@ -4,142 +4,270 @@
   <meta charset="UTF-8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-deep: #0a0d12;
-      --bg-surface: #12171f;
-      --bg-elevated: #1a2029;
-      --bg-hover: #242c38;
-      --accent-cyan: #00d4aa;
-      --accent-cyan-dim: rgba(0, 212, 170, 0.15);
-      --accent-cyan-glow: rgba(0, 212, 170, 0.4);
-      --accent-amber: #f59e0b;
-      --accent-amber-dim: rgba(245, 158, 11, 0.15);
-      --accent-blue: #3b82f6;
-      --accent-blue-dim: rgba(59, 130, 246, 0.15);
-      --accent-rose: #f43f5e;
-      --accent-rose-dim: rgba(244, 63, 94, 0.15);
-      --accent-green: #22c55e;
-      --accent-green-dim: rgba(34, 197, 94, 0.15);
-      --text-primary: #f1f5f9;
-      --text-secondary: #94a3b8;
-      --text-muted: #64748b;
-      --border-subtle: rgba(148, 163, 184, 0.1);
-      --border-accent: rgba(0, 212, 170, 0.3);
+      --bg-deep: #0c1117;
+      --bg-surface: #161b22;
+      --bg-elevated: #21262d;
+      --bg-hover: #30363d;
+      --accent-teal: #2dd4bf;
+      --accent-teal-dim: rgba(45, 212, 191, 0.12);
+      --accent-teal-glow: rgba(45, 212, 191, 0.35);
+      --accent-amber: #fbbf24;
+      --accent-amber-dim: rgba(251, 191, 36, 0.12);
+      --accent-green: #34d399;
+      --accent-green-dim: rgba(52, 211, 153, 0.12);
+      --accent-red: #f87171;
+      --accent-red-dim: rgba(248, 113, 113, 0.12);
+      --text-primary: #f0f6fc;
+      --text-secondary: #8b949e;
+      --text-muted: #6e7681;
+      --border-subtle: rgba(139, 148, 158, 0.15);
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      width: 440px;
-      min-height: 400px;
-      font-family: 'Plus Jakarta Sans', sans-serif;
+      width: 400px;
+      min-height: 320px;
+      font-family: 'DM Sans', sans-serif;
       background: var(--bg-deep);
       color: var(--text-primary);
+      overflow-x: hidden;
     }
 
-    /* Header */
+    /* Header - always visible */
     .header {
       padding: 16px 20px;
-      background: var(--bg-surface);
+      background: linear-gradient(180deg, var(--bg-surface) 0%, var(--bg-deep) 100%);
       border-bottom: 1px solid var(--border-subtle);
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
 
-    .header-left {
+    .brand {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
 
-    .logo {
-      font-size: 24px;
-      filter: drop-shadow(0 0 8px var(--accent-cyan-glow));
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      background: var(--accent-teal-dim);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
     }
 
-    .header h1 {
-      font-family: 'JetBrains Mono', monospace;
+    .brand h1 {
       font-size: 15px;
       font-weight: 600;
+      letter-spacing: -0.02em;
     }
 
-    .header .subtitle {
+    .brand-sub {
       font-size: 10px;
       color: var(--text-muted);
+      font-family: 'IBM Plex Mono', monospace;
       text-transform: uppercase;
-      letter-spacing: 0.1em;
+      letter-spacing: 0.08em;
     }
 
-    /* Status indicator */
-    .status-indicator {
+    .status-pill {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 6px 12px;
+      gap: 6px;
+      padding: 5px 10px;
       border-radius: 20px;
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 10px;
+      font-weight: 500;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.04em;
     }
 
-    .status-indicator.idle {
-      background: var(--bg-elevated);
-      color: var(--text-muted);
-    }
-
-    .status-indicator.running {
-      background: var(--accent-green-dim);
-      color: var(--accent-green);
-    }
-
-    .status-indicator.paused {
-      background: var(--accent-amber-dim);
-      color: var(--accent-amber);
-    }
+    .status-pill.idle { background: var(--bg-elevated); color: var(--text-muted); }
+    .status-pill.running { background: var(--accent-teal-dim); color: var(--accent-teal); }
+    .status-pill.paused { background: var(--accent-amber-dim); color: var(--accent-amber); }
 
     .status-dot {
-      width: 8px;
-      height: 8px;
+      width: 6px;
+      height: 6px;
       border-radius: 50%;
       background: currentColor;
     }
 
-    .status-indicator.running .status-dot {
-      animation: pulse 1.5s ease-in-out infinite;
+    .status-pill.running .status-dot {
+      animation: pulse 1.2s ease-in-out infinite;
     }
 
     @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(1.2); }
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
     }
 
-    /* Control panel */
-    .control-panel {
-      padding: 16px 20px;
-      background: var(--bg-surface);
-      border-bottom: 1px solid var(--border-subtle);
-    }
-
-    .control-buttons {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 12px;
-    }
-
-    .btn {
-      flex: 1;
-      padding: 12px 16px;
-      border: none;
+    /* Toast notifications - inline errors/success */
+    .toast {
+      margin: 12px 16px;
+      padding: 12px 14px;
       border-radius: 8px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
+      font-size: 13px;
+      display: none;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .toast.visible { display: flex; }
+    .toast.error { background: var(--accent-red-dim); color: var(--accent-red); }
+    .toast.success { background: var(--accent-green-dim); color: var(--accent-green); }
+    .toast.info { background: var(--accent-teal-dim); color: var(--accent-teal); }
+
+    .toast-icon { font-size: 16px; flex-shrink: 0; }
+    .toast-content { flex: 1; }
+    .toast-dismiss {
+      background: none;
+      border: none;
+      color: inherit;
+      opacity: 0.6;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+    }
+    .toast-dismiss:hover { opacity: 1; }
+
+    /* Main content area - state driven */
+    .main { padding: 0 16px 16px; }
+
+    /* State views - only one visible at a time */
+    .state-view { display: none; }
+    .state-view.active { display: block; }
+
+    /* EMPTY STATE - No domains */
+    .empty-hero {
+      text-align: center;
+      padding: 24px 16px;
+    }
+
+    .empty-icon {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 16px;
+      background: var(--bg-surface);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      border: 1px dashed var(--border-subtle);
+    }
+
+    .empty-hero h2 {
+      font-size: 16px;
       font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+
+    .empty-hero p {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .import-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .import-btn {
+      padding: 16px 12px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+    }
+
+    .import-btn:hover {
+      border-color: var(--accent-teal);
+      background: var(--bg-elevated);
+      transform: translateY(-2px);
+    }
+
+    .import-btn-icon {
+      font-size: 24px;
+      margin-bottom: 8px;
+      display: block;
+    }
+
+    .import-btn-label {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .import-btn-sub {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .import-btn.manual {
+      grid-column: span 2;
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .import-btn.manual .import-btn-icon {
+      font-size: 16px;
+      margin: 0;
+    }
+
+    /* READY STATE - Has domains, ready to start */
+    .ready-hero {
+      background: var(--bg-surface);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+
+    .ready-count {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 36px;
+      font-weight: 600;
+      color: var(--accent-teal);
+      line-height: 1;
+    }
+
+    .ready-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    .start-btn {
+      width: 100%;
+      padding: 14px 20px;
+      margin-top: 16px;
+      background: linear-gradient(135deg, var(--accent-teal) 0%, #14b8a6 100%);
+      border: none;
+      border-radius: 10px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--bg-deep);
       cursor: pointer;
       transition: all 0.2s ease;
       display: flex;
@@ -148,337 +276,463 @@
       gap: 8px;
     }
 
-    .btn-primary {
-      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
-      color: white;
+    .start-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px var(--accent-teal-glow);
     }
 
-    .btn-primary:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px var(--accent-cyan-glow);
+    .add-more-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
     }
 
-    .btn-primary:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      transform: none;
-      box-shadow: none;
-    }
-
-    .btn-secondary {
+    .add-more-btn {
+      flex: 1;
+      padding: 10px;
       background: var(--bg-elevated);
-      color: var(--text-secondary);
       border: 1px solid var(--border-subtle);
-    }
-
-    .btn-secondary:hover {
-      background: var(--bg-hover);
-      border-color: var(--border-accent);
-    }
-
-    .btn-danger {
-      background: var(--accent-rose-dim);
-      color: var(--accent-rose);
-      border: 1px solid transparent;
-    }
-
-    .btn-danger:hover {
-      background: var(--accent-rose);
-      color: white;
-    }
-
-    /* Current task display */
-    .current-task {
-      background: var(--bg-elevated);
       border-radius: 8px;
-      padding: 12px 14px;
-      display: none;
+      font-size: 11px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.15s ease;
     }
 
-    .current-task.active {
-      display: block;
+    .add-more-btn:hover {
+      border-color: var(--accent-teal);
+      color: var(--accent-teal);
     }
 
-    .current-task-label {
+    /* RUNNING STATE */
+    .running-hero {
+      background: var(--bg-surface);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .running-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .running-label {
       font-size: 10px;
       color: var(--text-muted);
       text-transform: uppercase;
-      letter-spacing: 0.1em;
+      letter-spacing: 0.08em;
+    }
+
+    .running-progress {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
+      color: var(--accent-teal);
+    }
+
+    .running-domain {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text-primary);
       margin-bottom: 4px;
     }
 
-    .current-task-domain {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--accent-cyan);
+    .running-state {
+      font-size: 12px;
+      color: var(--accent-amber);
     }
 
-    .current-task-state {
-      font-size: 11px;
-      color: var(--text-secondary);
-      margin-top: 2px;
-    }
-
-    /* Import section */
-    .import-section {
-      padding: 12px 20px;
+    .progress-bar {
+      height: 4px;
       background: var(--bg-deep);
-      border-bottom: 1px solid var(--border-subtle);
+      border-radius: 2px;
+      margin-top: 12px;
+      overflow: hidden;
     }
 
-    .import-label {
-      font-size: 10px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      margin-bottom: 8px;
+    .progress-fill {
+      height: 100%;
+      background: var(--accent-teal);
+      border-radius: 2px;
+      transition: width 0.3s ease;
     }
 
-    .import-buttons {
+    .control-row {
       display: flex;
       gap: 8px;
     }
 
-    .btn-import {
+    .control-btn {
       flex: 1;
-      padding: 10px;
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: 6px;
-      color: var(--text-secondary);
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
+      padding: 12px;
+      border-radius: 8px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
+      font-weight: 500;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
     }
 
-    .btn-import:hover {
-      border-color: var(--border-accent);
-      color: var(--accent-cyan);
+    .control-btn.pause {
+      background: var(--accent-amber-dim);
+      border: 1px solid transparent;
+      color: var(--accent-amber);
     }
 
-    /* Stats */
-    .stats {
+    .control-btn.pause:hover {
+      background: var(--accent-amber);
+      color: var(--bg-deep);
+    }
+
+    .control-btn.stop {
+      background: var(--accent-red-dim);
+      border: 1px solid transparent;
+      color: var(--accent-red);
+    }
+
+    .control-btn.stop:hover {
+      background: var(--accent-red);
+      color: white;
+    }
+
+    /* Stats bar */
+    .stats-bar {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
-      padding: 12px 20px;
-      background: var(--bg-deep);
+      gap: 6px;
+      margin-bottom: 12px;
     }
 
-    .stat {
-      text-align: center;
-      padding: 10px;
+    .stat-item {
       background: var(--bg-surface);
       border-radius: 8px;
+      padding: 10px 8px;
+      text-align: center;
     }
 
     .stat-value {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 20px;
-      font-weight: 700;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 18px;
+      font-weight: 600;
     }
 
     .stat-label {
       font-size: 9px;
       color: var(--text-muted);
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.06em;
       margin-top: 2px;
     }
 
-    .stat.queued .stat-value { color: var(--text-secondary); }
-    .stat.active .stat-value { color: var(--accent-amber); }
-    .stat.complete .stat-value { color: var(--accent-green); }
-    .stat.error .stat-value { color: var(--accent-rose); }
+    .stat-item.queued .stat-value { color: var(--text-secondary); }
+    .stat-item.active .stat-value { color: var(--accent-amber); }
+    .stat-item.done .stat-value { color: var(--accent-green); }
+    .stat-item.errors .stat-value { color: var(--accent-red); }
 
     /* Domain list */
-    .domain-list-header {
-      padding: 10px 20px;
-      background: var(--bg-elevated);
+    .domain-section {
+      background: var(--bg-surface);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .domain-header {
+      padding: 10px 14px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       border-bottom: 1px solid var(--border-subtle);
     }
 
-    .domain-list-title {
-      font-family: 'JetBrains Mono', monospace;
+    .domain-title {
+      font-family: 'IBM Plex Mono', monospace;
       font-size: 10px;
       color: var(--text-muted);
       text-transform: uppercase;
-      letter-spacing: 0.1em;
+      letter-spacing: 0.08em;
     }
 
-    .btn-clear-all {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 9px;
-      padding: 4px 10px;
-      border-radius: 4px;
+    .clear-btn {
+      font-size: 10px;
+      padding: 4px 8px;
       background: transparent;
-      border: 1px solid var(--accent-rose-dim);
-      color: var(--accent-rose);
+      border: 1px solid var(--accent-red-dim);
+      border-radius: 4px;
+      color: var(--accent-red);
       cursor: pointer;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
+      font-family: 'IBM Plex Mono', monospace;
     }
 
-    .btn-clear-all:hover {
-      background: var(--accent-rose-dim);
+    .clear-btn:hover {
+      background: var(--accent-red-dim);
     }
 
     .domain-list {
-      max-height: 200px;
+      max-height: 160px;
       overflow-y: auto;
-      padding: 12px 20px;
+      padding: 8px;
     }
 
     .domain-item {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 10px 12px;
-      background: var(--bg-surface);
-      border-radius: 8px;
-      margin-bottom: 8px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      margin-bottom: 4px;
+      background: var(--bg-elevated);
       border-left: 3px solid var(--text-muted);
     }
 
     .domain-item:last-child { margin-bottom: 0; }
-
     .domain-item.queued { border-left-color: var(--text-muted); }
-    .domain-item.getting_auth,
-    .domain-item.adding_to_cloudflare,
-    .domain-item.getting_cf_nameservers,
-    .domain-item.updating_nameservers { border-left-color: var(--accent-amber); }
+    .domain-item.active { border-left-color: var(--accent-amber); background: var(--accent-amber-dim); }
     .domain-item.complete { border-left-color: var(--accent-green); }
-    .domain-item.error { border-left-color: var(--accent-rose); }
+    .domain-item.error { border-left-color: var(--accent-red); }
 
     .domain-name {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 12px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 11px;
       font-weight: 500;
     }
 
-    .domain-state {
-      font-size: 9px;
-      padding: 3px 8px;
-      border-radius: 4px;
+    .domain-badge {
+      font-size: 8px;
+      padding: 2px 6px;
+      border-radius: 3px;
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.04em;
+      font-weight: 500;
     }
 
-    .domain-state.queued { background: var(--bg-elevated); color: var(--text-muted); }
-    .domain-state.getting_auth,
-    .domain-state.adding_to_cloudflare,
-    .domain-state.getting_cf_nameservers,
-    .domain-state.updating_nameservers { background: var(--accent-amber-dim); color: var(--accent-amber); }
-    .domain-state.complete { background: var(--accent-green-dim); color: var(--accent-green); }
-    .domain-state.error { background: var(--accent-rose-dim); color: var(--accent-rose); }
+    .domain-badge.queued { background: var(--bg-deep); color: var(--text-muted); }
+    .domain-badge.active { background: var(--accent-amber); color: var(--bg-deep); }
+    .domain-badge.complete { background: var(--accent-green-dim); color: var(--accent-green); }
+    .domain-badge.error { background: var(--accent-red-dim); color: var(--accent-red); }
 
-    .empty-state {
-      text-align: center;
-      padding: 32px 20px;
-      color: var(--text-muted);
+    /* Scrollbar */
+    .domain-list::-webkit-scrollbar { width: 4px; }
+    .domain-list::-webkit-scrollbar-track { background: transparent; }
+    .domain-list::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 2px; }
+
+    /* Manual input modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
     }
 
-    .empty-state-icon {
-      font-size: 32px;
+    .modal-overlay.visible { display: flex; }
+
+    .modal {
+      background: var(--bg-surface);
+      border-radius: 12px;
+      padding: 20px;
+      width: 90%;
+      max-width: 340px;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .modal h3 {
+      font-size: 15px;
       margin-bottom: 12px;
-      opacity: 0.5;
     }
 
-    .empty-state h3 {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 13px;
+    .modal-input {
+      width: 100%;
+      padding: 12px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px;
       margin-bottom: 8px;
+    }
+
+    .modal-input:focus {
+      outline: none;
+      border-color: var(--accent-teal);
+    }
+
+    .modal-input::placeholder { color: var(--text-muted); }
+
+    .modal-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .modal-btn {
+      flex: 1;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    .modal-btn.cancel {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
       color: var(--text-secondary);
     }
 
-    .empty-state p {
-      font-size: 12px;
-      line-height: 1.5;
+    .modal-btn.confirm {
+      background: var(--accent-teal);
+      border: none;
+      color: var(--bg-deep);
     }
-
-    /* Scrollbar */
-    .domain-list::-webkit-scrollbar { width: 6px; }
-    .domain-list::-webkit-scrollbar-track { background: transparent; }
-    .domain-list::-webkit-scrollbar-thumb { background: var(--bg-elevated); border-radius: 3px; }
   </style>
 </head>
 <body>
   <header class="header">
-    <div class="header-left">
-      <span class="logo">&#8644;</span>
+    <div class="brand">
+      <div class="brand-icon">⇄</div>
       <div>
         <h1>Domain Migrator</h1>
-        <div class="subtitle">Autonomous Transfer</div>
+        <div class="brand-sub">→ Cloudflare</div>
       </div>
     </div>
-    <div class="status-indicator idle" id="status-indicator">
+    <div class="status-pill idle" id="status-pill">
       <span class="status-dot"></span>
       <span id="status-text">Idle</span>
     </div>
   </header>
 
-  <section class="control-panel">
-    <div class="control-buttons">
-      <button class="btn btn-primary" id="btn-start">
-        <span>&#9654;</span> Start
-      </button>
-      <button class="btn btn-secondary" id="btn-pause" disabled>
-        <span>&#10074;&#10074;</span> Pause
-      </button>
-      <button class="btn btn-danger" id="btn-stop" disabled>
-        <span>&#9632;</span> Stop
-      </button>
-    </div>
-    <div class="current-task" id="current-task">
-      <div class="current-task-label">Currently processing</div>
-      <div class="current-task-domain" id="current-domain">-</div>
-      <div class="current-task-state" id="current-state">-</div>
-    </div>
-  </section>
-
-  <section class="import-section">
-    <div class="import-label">Import domains from</div>
-    <div class="import-buttons">
-      <button class="btn-import" id="import-godaddy">GoDaddy</button>
-      <button class="btn-import" id="import-squarespace">Squarespace</button>
-      <button class="btn-import" id="import-manual">Add Manually</button>
-    </div>
-  </section>
-
-  <section class="stats">
-    <div class="stat queued">
-      <div class="stat-value" id="stat-queued">0</div>
-      <div class="stat-label">Queued</div>
-    </div>
-    <div class="stat active">
-      <div class="stat-value" id="stat-active">0</div>
-      <div class="stat-label">Active</div>
-    </div>
-    <div class="stat complete">
-      <div class="stat-value" id="stat-complete">0</div>
-      <div class="stat-label">Done</div>
-    </div>
-    <div class="stat error">
-      <div class="stat-value" id="stat-error">0</div>
-      <div class="stat-label">Errors</div>
-    </div>
-  </section>
-
-  <div class="domain-list-header">
-    <span class="domain-list-title">Domains</span>
-    <button class="btn-clear-all" id="btn-clear">Clear All</button>
+  <!-- Inline notifications -->
+  <div class="toast" id="toast">
+    <span class="toast-icon" id="toast-icon">⚠</span>
+    <span class="toast-content" id="toast-content"></span>
+    <button class="toast-dismiss" id="toast-dismiss">×</button>
   </div>
 
-  <div class="domain-list" id="domain-list">
-    <div class="empty-state">
-      <div class="empty-state-icon">&#128269;</div>
-      <h3>No domains yet</h3>
-      <p>Import domains from GoDaddy or Squarespace,<br>or add them manually to get started.</p>
+  <div class="main">
+    <!-- EMPTY STATE: No domains yet -->
+    <div class="state-view active" id="state-empty">
+      <div class="empty-hero">
+        <div class="empty-icon">📦</div>
+        <h2>Import your domains</h2>
+        <p>Connect to your registrar to automatically<br>import all your domains.</p>
+      </div>
+      <div class="import-grid">
+        <button class="import-btn" id="import-godaddy">
+          <span class="import-btn-icon">🟠</span>
+          <span class="import-btn-label">GoDaddy</span>
+          <div class="import-btn-sub">Auto-import</div>
+        </button>
+        <button class="import-btn" id="import-squarespace">
+          <span class="import-btn-icon">⬛</span>
+          <span class="import-btn-label">Squarespace</span>
+          <div class="import-btn-sub">Auto-import</div>
+        </button>
+        <button class="import-btn manual" id="import-manual">
+          <span class="import-btn-icon">✏️</span>
+          <span class="import-btn-label">Add manually</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- READY STATE: Has domains, ready to start -->
+    <div class="state-view" id="state-ready">
+      <div class="ready-hero">
+        <div class="ready-count" id="ready-count">0</div>
+        <div class="ready-label">domains ready to migrate</div>
+        <button class="start-btn" id="btn-start">
+          <span>▶</span> Start Migration
+        </button>
+      </div>
+      <div class="add-more-row">
+        <button class="add-more-btn" id="add-godaddy">+ GoDaddy</button>
+        <button class="add-more-btn" id="add-squarespace">+ Squarespace</button>
+        <button class="add-more-btn" id="add-manual">+ Manual</button>
+      </div>
+    </div>
+
+    <!-- RUNNING STATE: Migration in progress -->
+    <div class="state-view" id="state-running">
+      <div class="running-hero">
+        <div class="running-header">
+          <span class="running-label">Currently processing</span>
+          <span class="running-progress" id="running-progress">1 of 8</span>
+        </div>
+        <div class="running-domain" id="running-domain">example.com</div>
+        <div class="running-state" id="running-state">Getting auth code...</div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progress-fill" style="width: 12%"></div>
+        </div>
+      </div>
+      <div class="control-row">
+        <button class="control-btn pause" id="btn-pause">
+          <span>⏸</span> Pause
+        </button>
+        <button class="control-btn stop" id="btn-stop">
+          <span>⏹</span> Stop
+        </button>
+      </div>
+    </div>
+
+    <!-- Stats & Domain List (visible when has domains) -->
+    <div id="domains-section" style="display: none;">
+      <div class="stats-bar">
+        <div class="stat-item queued">
+          <div class="stat-value" id="stat-queued">0</div>
+          <div class="stat-label">Queued</div>
+        </div>
+        <div class="stat-item active">
+          <div class="stat-value" id="stat-active">0</div>
+          <div class="stat-label">Active</div>
+        </div>
+        <div class="stat-item done">
+          <div class="stat-value" id="stat-done">0</div>
+          <div class="stat-label">Done</div>
+        </div>
+        <div class="stat-item errors">
+          <div class="stat-value" id="stat-errors">0</div>
+          <div class="stat-label">Errors</div>
+        </div>
+      </div>
+
+      <div class="domain-section">
+        <div class="domain-header">
+          <span class="domain-title">Domains</span>
+          <button class="clear-btn" id="btn-clear">Clear</button>
+        </div>
+        <div class="domain-list" id="domain-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manual add modal -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <h3>Add domains manually</h3>
+      <input type="text" class="modal-input" id="modal-domains" placeholder="example.com, another.org">
+      <div class="modal-hint">Separate multiple domains with commas</div>
+      <select class="modal-input" id="modal-registrar">
+        <option value="godaddy">Source: GoDaddy</option>
+        <option value="squarespace">Source: Squarespace</option>
+      </select>
+      <div class="modal-actions">
+        <button class="modal-btn cancel" id="modal-cancel">Cancel</button>
+        <button class="modal-btn confirm" id="modal-confirm">Add Domains</button>
+      </div>
     </div>
   </div>
 

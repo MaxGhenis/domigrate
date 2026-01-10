@@ -1,274 +1,353 @@
 // Domain Migrator - Popup Controller
-// Handles UI interactions and communicates with background orchestrator
+// State-driven UI with inline notifications
 
 const ACTIVE_STATES = [
-  'getting_auth',
-  'adding_to_cloudflare',
-  'selecting_plan',
-  'getting_cf_nameservers',
-  'updating_nameservers'
+  'getting_auth', 'adding_to_cloudflare', 'selecting_plan',
+  'getting_cf_nameservers', 'updating_nameservers'
 ];
 
 const STATE_LABELS = {
   queued: 'Queued',
-  getting_auth: 'Getting Auth',
-  adding_to_cloudflare: 'Adding to CF',
-  selecting_plan: 'Selecting Plan',
-  getting_cf_nameservers: 'Getting NS',
-  updating_nameservers: 'Updating NS',
+  getting_auth: 'Getting auth code...',
+  adding_to_cloudflare: 'Adding to Cloudflare...',
+  selecting_plan: 'Selecting plan...',
+  getting_cf_nameservers: 'Getting nameservers...',
+  updating_nameservers: 'Updating nameservers...',
   complete: 'Complete',
   error: 'Error'
 };
 
-let elements = {};
-let isRunning = false;
-let isPaused = false;
+// App state
+let state = {
+  domains: [],
+  isRunning: false,
+  isPaused: false,
+  currentDomain: null,
+  currentState: null,
+  stats: { queued: 0, active: 0, done: 0, errors: 0 }
+};
+
+// DOM elements cache
+const el = {};
 
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
   cacheElements();
   setupEventListeners();
-  await refreshStatus();
-  await loadDomains();
+  await refresh();
 
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.action === 'statusUpdate') {
-      updateUIFromStatus(message.status);
-      loadDomains();
-    }
+  // Listen for background updates
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === 'statusUpdate') refresh();
   });
 
-  setInterval(async () => {
-    await refreshStatus();
-    await loadDomains();
-  }, 3000);
+  // Periodic refresh
+  setInterval(refresh, 2000);
 }
 
 function cacheElements() {
-  elements = {
-    statusIndicator: document.getElementById('status-indicator'),
-    statusText: document.getElementById('status-text'),
-    btnStart: document.getElementById('btn-start'),
-    btnPause: document.getElementById('btn-pause'),
-    btnStop: document.getElementById('btn-stop'),
-    currentTask: document.getElementById('current-task'),
-    currentDomain: document.getElementById('current-domain'),
-    currentState: document.getElementById('current-state'),
-    domainList: document.getElementById('domain-list'),
-    statQueued: document.getElementById('stat-queued'),
-    statActive: document.getElementById('stat-active'),
-    statComplete: document.getElementById('stat-complete'),
-    statError: document.getElementById('stat-error')
-  };
+  el.statusPill = document.getElementById('status-pill');
+  el.statusText = document.getElementById('status-text');
+  el.toast = document.getElementById('toast');
+  el.toastIcon = document.getElementById('toast-icon');
+  el.toastContent = document.getElementById('toast-content');
+  el.stateEmpty = document.getElementById('state-empty');
+  el.stateReady = document.getElementById('state-ready');
+  el.stateRunning = document.getElementById('state-running');
+  el.domainsSection = document.getElementById('domains-section');
+  el.readyCount = document.getElementById('ready-count');
+  el.runningDomain = document.getElementById('running-domain');
+  el.runningState = document.getElementById('running-state');
+  el.runningProgress = document.getElementById('running-progress');
+  el.progressFill = document.getElementById('progress-fill');
+  el.btnPause = document.getElementById('btn-pause');
+  el.domainList = document.getElementById('domain-list');
+  el.statQueued = document.getElementById('stat-queued');
+  el.statActive = document.getElementById('stat-active');
+  el.statDone = document.getElementById('stat-done');
+  el.statErrors = document.getElementById('stat-errors');
+  el.modalOverlay = document.getElementById('modal-overlay');
+  el.modalDomains = document.getElementById('modal-domains');
+  el.modalRegistrar = document.getElementById('modal-registrar');
 }
 
 function setupEventListeners() {
-  elements.btnStart.addEventListener('click', handleStart);
-  elements.btnPause.addEventListener('click', handlePause);
-  elements.btnStop.addEventListener('click', handleStop);
+  // Import buttons (empty state)
+  document.getElementById('import-godaddy').addEventListener('click', () => importFrom('godaddy'));
+  document.getElementById('import-squarespace').addEventListener('click', () => importFrom('squarespace'));
+  document.getElementById('import-manual').addEventListener('click', showModal);
 
-  document.getElementById('import-godaddy').addEventListener('click', () => importFromRegistrar('godaddy'));
-  document.getElementById('import-squarespace').addEventListener('click', () => importFromRegistrar('squarespace'));
-  document.getElementById('import-manual').addEventListener('click', showManualAddDialog);
-  document.getElementById('btn-clear').addEventListener('click', handleClearAll);
+  // Add more buttons (ready state)
+  document.getElementById('add-godaddy').addEventListener('click', () => importFrom('godaddy'));
+  document.getElementById('add-squarespace').addEventListener('click', () => importFrom('squarespace'));
+  document.getElementById('add-manual').addEventListener('click', showModal);
+
+  // Control buttons
+  document.getElementById('btn-start').addEventListener('click', startMigration);
+  document.getElementById('btn-pause').addEventListener('click', togglePause);
+  document.getElementById('btn-stop').addEventListener('click', stopMigration);
+  document.getElementById('btn-clear').addEventListener('click', clearAll);
+
+  // Modal
+  document.getElementById('modal-cancel').addEventListener('click', hideModal);
+  document.getElementById('modal-confirm').addEventListener('click', addManualDomains);
+  document.getElementById('toast-dismiss').addEventListener('click', hideToast);
+
+  // Close modal on overlay click
+  el.modalOverlay.addEventListener('click', (e) => {
+    if (e.target === el.modalOverlay) hideModal();
+  });
 }
 
-async function handleStart() {
-  const response = await chrome.runtime.sendMessage({
-    action: isPaused ? 'resumeMigration' : 'startMigration'
-  });
+// ============ Data Fetching ============
 
-  if (response.error) {
-    alert(response.error);
+async function refresh() {
+  try {
+    const [status, domains] = await Promise.all([
+      chrome.runtime.sendMessage({ action: 'getStatus' }),
+      chrome.runtime.sendMessage({ action: 'getDomains' })
+    ]);
+
+    state.isRunning = status?.isRunning || false;
+    state.isPaused = status?.isPaused || false;
+    state.currentDomain = status?.currentDomain;
+    state.currentState = status?.currentState;
+    state.domains = Object.values(domains || {});
+
+    calculateStats();
+    render();
+  } catch (e) {
+    console.error('Refresh failed:', e);
+  }
+}
+
+function calculateStats() {
+  state.stats = { queued: 0, active: 0, done: 0, errors: 0 };
+
+  for (const d of state.domains) {
+    if (d.state === 'complete') state.stats.done++;
+    else if (d.state === 'error') state.stats.errors++;
+    else if (ACTIVE_STATES.includes(d.state)) state.stats.active++;
+    else state.stats.queued++;
+  }
+}
+
+// ============ Rendering ============
+
+function render() {
+  renderStatus();
+  renderStateView();
+  renderStats();
+  renderDomainList();
+}
+
+function renderStatus() {
+  el.statusPill.className = 'status-pill';
+
+  if (state.isRunning && !state.isPaused) {
+    el.statusPill.classList.add('running');
+    el.statusText.textContent = 'Running';
+  } else if (state.isPaused) {
+    el.statusPill.classList.add('paused');
+    el.statusText.textContent = 'Paused';
+  } else {
+    el.statusPill.classList.add('idle');
+    el.statusText.textContent = 'Idle';
+  }
+}
+
+function renderStateView() {
+  // Hide all state views
+  el.stateEmpty.classList.remove('active');
+  el.stateReady.classList.remove('active');
+  el.stateRunning.classList.remove('active');
+
+  const hasDomains = state.domains.length > 0;
+  const pendingCount = state.stats.queued + state.stats.active;
+
+  // Show domains section when we have domains
+  el.domainsSection.style.display = hasDomains ? 'block' : 'none';
+
+  if (state.isRunning) {
+    // Running state
+    el.stateRunning.classList.add('active');
+    renderRunningState();
+  } else if (hasDomains && pendingCount > 0) {
+    // Ready to start
+    el.stateReady.classList.add('active');
+    el.readyCount.textContent = pendingCount;
+  } else if (hasDomains) {
+    // Has domains but all done/error - show ready state anyway
+    el.stateReady.classList.add('active');
+    el.readyCount.textContent = '0';
+  } else {
+    // Empty state
+    el.stateEmpty.classList.add('active');
+  }
+}
+
+function renderRunningState() {
+  const total = state.domains.length;
+  const completed = state.stats.done + state.stats.errors;
+  const current = completed + 1;
+
+  el.runningDomain.textContent = state.currentDomain || '...';
+  el.runningState.textContent = STATE_LABELS[state.currentState] || 'Processing...';
+  el.runningProgress.textContent = `${current} of ${total}`;
+
+  const progress = total > 0 ? (completed / total) * 100 : 0;
+  el.progressFill.style.width = `${Math.max(progress, 5)}%`;
+
+  // Update pause button
+  el.btnPause.innerHTML = state.isPaused
+    ? '<span>▶</span> Resume'
+    : '<span>⏸</span> Pause';
+}
+
+function renderStats() {
+  el.statQueued.textContent = state.stats.queued;
+  el.statActive.textContent = state.stats.active;
+  el.statDone.textContent = state.stats.done;
+  el.statErrors.textContent = state.stats.errors;
+}
+
+function renderDomainList() {
+  if (state.domains.length === 0) {
+    el.domainList.innerHTML = '';
     return;
   }
-  await refreshStatus();
+
+  // Sort: active first, then queued, then complete, then error
+  const sorted = [...state.domains].sort((a, b) => {
+    const order = { active: 0, queued: 1, complete: 2, error: 3 };
+    const getOrder = (s) => ACTIVE_STATES.includes(s) ? 0 : (order[s] ?? 1);
+    return getOrder(a.state) - getOrder(b.state);
+  });
+
+  el.domainList.innerHTML = sorted.map(d => {
+    const stateClass = ACTIVE_STATES.includes(d.state) ? 'active' : (d.state || 'queued');
+    const label = STATE_LABELS[d.state] || 'Queued';
+
+    return `
+      <div class="domain-item ${stateClass}">
+        <span class="domain-name">${escapeHtml(d.name)}</span>
+        <span class="domain-badge ${stateClass}">${label}</span>
+      </div>
+    `;
+  }).join('');
 }
 
-async function handlePause() {
-  const action = isPaused ? 'resumeMigration' : 'pauseMigration';
-  await chrome.runtime.sendMessage({ action });
-  await refreshStatus();
-}
+// ============ Actions ============
 
-async function handleStop() {
-  await chrome.runtime.sendMessage({ action: 'stopMigration' });
-  await refreshStatus();
-}
+async function importFrom(registrar) {
+  showToast('info', `Opening ${registrar === 'godaddy' ? 'GoDaddy' : 'Squarespace'}...`);
 
-async function handleClearAll() {
-  if (!confirm('Clear all tracked domains? This cannot be undone.')) return;
-  await chrome.runtime.sendMessage({ action: 'clearAllDomains' });
-  await loadDomains();
-}
-
-async function importFromRegistrar(registrar) {
   const response = await chrome.runtime.sendMessage({
     action: 'importFromRegistrar',
     data: { registrar }
   });
 
   if (response.error) {
-    alert(response.error);
+    showToast('error', response.error);
+  } else {
+    // Close popup - the import will happen on the registrar page
+    window.close();
+  }
+}
+
+async function startMigration() {
+  const response = await chrome.runtime.sendMessage({
+    action: state.isPaused ? 'resumeMigration' : 'startMigration'
+  });
+
+  if (response.error) {
+    showToast('error', response.error);
+  } else {
+    showToast('success', 'Migration started!');
+    await refresh();
+  }
+}
+
+async function togglePause() {
+  const action = state.isPaused ? 'resumeMigration' : 'pauseMigration';
+  await chrome.runtime.sendMessage({ action });
+  await refresh();
+}
+
+async function stopMigration() {
+  await chrome.runtime.sendMessage({ action: 'stopMigration' });
+  showToast('info', 'Migration stopped');
+  await refresh();
+}
+
+async function clearAll() {
+  if (state.isRunning) {
+    showToast('error', 'Stop migration before clearing');
     return;
   }
 
-  window.close();
+  await chrome.runtime.sendMessage({ action: 'clearAllDomains' });
+  showToast('info', 'All domains cleared');
+  await refresh();
 }
 
-function showManualAddDialog() {
-  const input = prompt('Enter domain names (comma-separated):');
-  if (!input) return;
+// ============ Modal ============
+
+function showModal() {
+  el.modalDomains.value = '';
+  el.modalOverlay.classList.add('visible');
+  el.modalDomains.focus();
+}
+
+function hideModal() {
+  el.modalOverlay.classList.remove('visible');
+}
+
+async function addManualDomains() {
+  const input = el.modalDomains.value;
+  const registrar = el.modalRegistrar.value;
 
   const domains = input.split(',')
     .map(d => d.trim().toLowerCase())
     .filter(d => d.match(/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/));
 
   if (domains.length === 0) {
-    alert('No valid domains entered');
+    showToast('error', 'No valid domains entered');
     return;
   }
 
-  const registrar = prompt('Source registrar (godaddy/squarespace):', 'godaddy') || 'godaddy';
+  hideModal();
 
-  chrome.runtime.sendMessage({
+  const response = await chrome.runtime.sendMessage({
     action: 'addDomainsToQueue',
     data: { domains, sourceRegistrar: registrar }
-  }).then(response => {
-    if (response.success) {
-      alert(`Added ${response.added} domains`);
-      loadDomains();
-    }
   });
-}
 
-async function refreshStatus() {
-  try {
-    const status = await chrome.runtime.sendMessage({ action: 'getStatus' });
-    updateUIFromStatus(status);
-  } catch (e) {
-    console.error('Failed to get status:', e);
-  }
-}
-
-function updateUIFromStatus(status) {
-  if (!status) return;
-
-  isRunning = status.isRunning;
-  isPaused = status.isPaused;
-
-  updateStatusIndicator();
-  updateButtons();
-  updateCurrentTask(status);
-}
-
-function updateStatusIndicator() {
-  elements.statusIndicator.className = 'status-indicator';
-
-  if (isRunning && !isPaused) {
-    elements.statusIndicator.classList.add('running');
-    elements.statusText.textContent = 'Running';
-  } else if (isPaused) {
-    elements.statusIndicator.classList.add('paused');
-    elements.statusText.textContent = 'Paused';
+  if (response.success) {
+    showToast('success', `Added ${response.added} domain${response.added !== 1 ? 's' : ''}`);
+    await refresh();
   } else {
-    elements.statusIndicator.classList.add('idle');
-    elements.statusText.textContent = 'Idle';
+    showToast('error', response.error || 'Failed to add domains');
   }
 }
 
-function updateButtons() {
-  elements.btnStart.disabled = isRunning && !isPaused;
-  elements.btnStart.innerHTML = isPaused ? '<span>&#9654;</span> Resume' : '<span>&#9654;</span> Start';
-  elements.btnPause.disabled = !isRunning;
-  elements.btnPause.innerHTML = isPaused ? '<span>&#9654;</span> Resume' : '<span>&#10074;&#10074;</span> Pause';
-  elements.btnStop.disabled = !isRunning;
+// ============ Toast Notifications ============
+
+function showToast(type, message) {
+  el.toast.className = `toast visible ${type}`;
+  el.toastIcon.textContent = type === 'error' ? '⚠' : type === 'success' ? '✓' : 'ℹ';
+  el.toastContent.textContent = message;
+
+  // Auto-hide after 4 seconds
+  setTimeout(hideToast, 4000);
 }
 
-function updateCurrentTask(status) {
-  if (isRunning && status.currentDomain) {
-    elements.currentTask.classList.add('active');
-    elements.currentDomain.textContent = status.currentDomain;
-    elements.currentState.textContent = formatState(status.currentState);
-  } else {
-    elements.currentTask.classList.remove('active');
-  }
+function hideToast() {
+  el.toast.classList.remove('visible');
 }
 
-async function loadDomains() {
-  try {
-    const domains = await chrome.runtime.sendMessage({ action: 'getDomains' });
-    const domainArray = Object.values(domains || {});
-
-    updateStats(domainArray);
-    renderDomainList(domainArray);
-  } catch (e) {
-    console.error('Failed to load domains:', e);
-  }
-}
-
-function updateStats(domains) {
-  const stats = { queued: 0, active: 0, complete: 0, error: 0 };
-
-  for (const domain of domains) {
-    const state = domain.state || 'queued';
-    if (state === 'complete') {
-      stats.complete++;
-    } else if (state === 'error') {
-      stats.error++;
-    } else if (ACTIVE_STATES.includes(state)) {
-      stats.active++;
-    } else {
-      stats.queued++;
-    }
-  }
-
-  elements.statQueued.textContent = stats.queued;
-  elements.statActive.textContent = stats.active;
-  elements.statComplete.textContent = stats.complete;
-  elements.statError.textContent = stats.error;
-}
-
-function renderDomainList(domains) {
-  if (domains.length === 0) {
-    elements.domainList.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">&#128269;</div>
-        <h3>No domains yet</h3>
-        <p>Import domains from GoDaddy or Squarespace,<br>or add them manually to get started.</p>
-      </div>
-    `;
-    return;
-  }
-
-  const stateOrder = {
-    getting_auth: 0,
-    adding_to_cloudflare: 0,
-    selecting_plan: 0,
-    getting_cf_nameservers: 0,
-    updating_nameservers: 0,
-    queued: 1,
-    complete: 2,
-    error: 3
-  };
-
-  domains.sort((a, b) => (stateOrder[a.state] ?? 1) - (stateOrder[b.state] ?? 1));
-
-  elements.domainList.innerHTML = domains.map(domain => {
-    const state = domain.state || 'queued';
-    return `
-      <div class="domain-item ${state}">
-        <span class="domain-name">${escapeHtml(domain.name)}</span>
-        <span class="domain-state ${state}">${formatState(state)}</span>
-      </div>
-    `;
-  }).join('');
-}
-
-function formatState(state) {
-  return STATE_LABELS[state] || state || 'Queued';
-}
+// ============ Utilities ============
 
 function escapeHtml(text) {
   const div = document.createElement('div');
