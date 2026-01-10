@@ -99,9 +99,28 @@
       return;
     }
 
-    // If on transfer out page, extract the auth code from there
+    // If on transfer out page, handle the multi-step flow
     if (pageType === 'transfer_out') {
-      console.log('On transfer out page, looking for auth code...');
+      console.log('On transfer out page...');
+
+      // Check if we're on Step 1 (checklist) - click Continue
+      const continueBtn = findButton(['continue']);
+      if (continueBtn && document.body.innerText.includes('Step 1 of 2')) {
+        console.log('On Step 1, clicking Continue...');
+        continueBtn.click();
+        await wait(2000);
+        return; // Page will reload, we'll be called again
+      }
+
+      // Check if we need to reveal the auth code
+      const revealBtn = findButton(['click here to see authorization code', 'see authorization code', 'show authorization code']);
+      if (revealBtn) {
+        console.log('Clicking to reveal auth code...');
+        revealBtn.click();
+        await wait(1500);
+      }
+
+      // Now try to extract the auth code
       const authCode = findAuthCodeOnPage();
       if (authCode) {
         console.log(`Found auth code: ${authCode.substring(0, 4)}...`);
@@ -111,6 +130,10 @@
         });
         return;
       }
+
+      // If still no auth code, report error
+      await reportError(domain, 'Could not find auth code on transfer page', REGISTRAR);
+      return;
     }
 
     if (pageType !== 'domain_settings' && pageType !== 'domain_overview' && pageType !== 'transfer_out') {
@@ -150,6 +173,13 @@
   }
 
   function findAuthCodeOnPage() {
+    // GoDaddy transfer page has auth code in #authCodeInput
+    const authCodeInput = document.querySelector('#authCodeInput');
+    if (authCodeInput?.value) {
+      const code = authCodeInput.value.trim();
+      if (code.length >= 8) return code;
+    }
+
     const containers = document.querySelectorAll(
       '[data-testid*="auth"], [data-testid*="code"], .auth-code, .authorization-code, input[readonly], .code-display'
     );
@@ -161,12 +191,12 @@
 
     const modals = document.querySelectorAll('.modal, [role="dialog"], .popup');
     for (const modal of modals) {
-      const codeMatch = modal.innerText.match(/(?:code|authorization)[:\s]+([A-Za-z0-9!@#$%^&*()_\-+=]{8,30})/i);
+      const codeMatch = modal.innerText.match(/(?:code|authorization)[:\s]+([A-Za-z0-9!@#$%^&*()_\-+=,\.]{8,30})/i);
       if (codeMatch) return codeMatch[1];
     }
 
     const bodyText = document.body.innerText;
-    const nearAuth = bodyText.match(/authorization[^a-z]*code[^a-z]*([A-Za-z0-9!@#$%^&*()_\-+=]{8,30})/i);
+    const nearAuth = bodyText.match(/authorization[^a-z]*code[^a-z]*([A-Za-z0-9!@#$%^&*()_\-+=,\.]{8,30})/i);
     if (nearAuth) return nearAuth[1];
 
     return null;
