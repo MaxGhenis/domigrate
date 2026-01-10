@@ -29,7 +29,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://dcc.godaddy.com/*", "https://www.godaddy.com/*", "https://godaddy.com/*"],
+      "matches": ["https://dcc.godaddy.com/*", "https://www.godaddy.com/*", "https://godaddy.com/*", "https://sso.godaddy.com/*"],
       "js": ["content-scripts/shared.js", "content-scripts/godaddy.js"]
     },
     {

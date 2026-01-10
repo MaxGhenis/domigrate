@@ -41,7 +41,13 @@
     const url = window.location.href;
     const path = window.location.pathname;
 
-    if (url.includes('/transfers')) return 'transfers'; // Detect transfers page to avoid loops
+    // Detect SSO/2FA pages - user needs to complete verification
+    if (url.includes('sso.godaddy.com') || url.includes('login') || url.includes('verify')) {
+      return 'verification_required';
+    }
+    // Detect transfer out page (where auth code is shown)
+    if (url.includes('transferOut')) return 'transfer_out';
+    if (url.includes('/transfers')) return 'transfers';
     if (url.includes('portfolio') && !path.includes('.')) return 'portfolio_list';
     if (url.includes('/settings') || url.includes('settings')) return 'domain_settings';
     if (url.includes('dnsmanagement') || url.includes('dns')) return 'dns_management';
@@ -85,7 +91,29 @@
     console.log(`Extracting auth code for ${domain}...`);
 
     const pageType = detectPageType();
-    if (pageType !== 'domain_settings' && pageType !== 'domain_overview') {
+
+    // If on verification page, wait for user to complete 2FA
+    if (pageType === 'verification_required') {
+      console.log('2FA verification required - waiting for user...');
+      // Don't navigate away, let user complete verification
+      return;
+    }
+
+    // If on transfer out page, extract the auth code from there
+    if (pageType === 'transfer_out') {
+      console.log('On transfer out page, looking for auth code...');
+      const authCode = findAuthCodeOnPage();
+      if (authCode) {
+        console.log(`Found auth code: ${authCode.substring(0, 4)}...`);
+        await chrome.runtime.sendMessage({
+          action: 'actionComplete',
+          data: { action: 'extractAuthCode', domain, authCode, registrar: REGISTRAR }
+        });
+        return;
+      }
+    }
+
+    if (pageType !== 'domain_settings' && pageType !== 'domain_overview' && pageType !== 'transfer_out') {
       console.log('Navigating to domain settings...');
       window.location.href = `https://dcc.godaddy.com/control/portfolio/${domain}/settings`;
       return;
