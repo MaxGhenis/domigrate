@@ -1,0 +1,176 @@
+/* Domain Migrator Overlay Styles */
+
+#domain-migrator-overlay {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 320px;
+  background: #1a1a2e;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  color: #e0e0e0;
+  z-index: 2147483647;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+#domain-migrator-overlay.dm-minimized {
+  width: 180px;
+}
+
+#domain-migrator-overlay.dm-minimized .dm-content {
+  display: none;
+}
+
+.dm-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  cursor: move;
+}
+
+.dm-logo {
+  font-size: 18px;
+  margin-right: 8px;
+}
+
+.dm-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+  color: white;
+}
+
+.dm-minimize {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: background 0.2s;
+}
+
+.dm-minimize:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.dm-content {
+  padding: 16px;
+}
+
+.dm-domain-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+
+.dm-status {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 16px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+
+.dm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.dm-btn {
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #2d2d44;
+  color: #e0e0e0;
+}
+
+.dm-btn:hover {
+  background: #3d3d5c;
+  transform: translateY(-1px);
+}
+
+.dm-btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.dm-btn-primary:hover {
+  filter: brightness(1.1);
+}
+
+.dm-btn-success {
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  color: white;
+}
+
+.dm-btn-success:hover {
+  filter: brightness(1.1);
+}
+
+.dm-btn-small {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.dm-info {
+  font-size: 12px;
+  color: #aaa;
+  line-height: 1.5;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.dm-info:empty {
+  display: none;
+}
+
+.dm-info code {
+  background: rgba(102, 126, 234, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', monospace;
+  font-size: 11px;
+  color: #a5b4fc;
+}
+
+.dm-info strong {
+  color: #fff;
+}
+
+/* Scrollbar */
+.dm-info::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dm-info::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dm-info::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 3px;
+}
+
+.dm-info::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}

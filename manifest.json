@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Domain Migrator",
+  "version": "1.0.0",
+  "description": "Migrate domains between registrars (GoDaddy, Squarespace, Cloudflare, etc.)",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*.godaddy.com/*",
+    "https://account.squarespace.com/*",
+    "https://domains.squarespace.com/*",
+    "https://dash.cloudflare.com/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://dcc.godaddy.com/*", "https://www.godaddy.com/*", "https://godaddy.com/*"],
+      "js": ["content-scripts/godaddy.js"],
+      "css": ["content-scripts/overlay.css"]
+    },
+    {
+      "matches": ["https://account.squarespace.com/*", "https://domains.squarespace.com/*"],
+      "js": ["content-scripts/squarespace.js"],
+      "css": ["content-scripts/overlay.css"]
+    },
+    {
+      "matches": ["https://dash.cloudflare.com/*"],
+      "js": ["content-scripts/cloudflare.js"],
+      "css": ["content-scripts/overlay.css"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
