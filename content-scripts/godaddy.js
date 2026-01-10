@@ -96,7 +96,8 @@
     if (!authCode) {
       // Note: Don't include 'transfer' alone - it matches nav links
       const authButton = findButton([
-        'get authorization code', 'get auth code', 'authorization code', 'auth code', 'transfer out', 'transfer away'
+        'get authorization code', 'get auth code', 'authorization code', 'auth code',
+        'transfer to another registrar', 'transfer out', 'transfer away'
       ]);
 
       if (authButton) {
