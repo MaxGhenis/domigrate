@@ -5,41 +5,20 @@
   'use strict';
 
   const REGISTRAR = 'godaddy';
-  let currentDomain = null;
 
   console.log('Domain Migrator: GoDaddy script loaded');
 
-  // Initialize on page load
+  const init = createContentScriptInit({
+    registrar: REGISTRAR,
+    extractDomain: extractDomainFromUrl,
+    detectPageType,
+    executeAction
+  });
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
     init();
-  }
-
-  async function init() {
-    await waitForPageReady();
-    currentDomain = extractDomainFromUrl();
-    const pageType = detectPageType();
-
-    console.log(`GoDaddy page: ${pageType}, domain: ${currentDomain || 'none'}`);
-
-    const response = await chrome.runtime.sendMessage({
-      action: 'pageReady',
-      data: {
-        registrar: REGISTRAR,
-        pageType,
-        domain: currentDomain,
-        url: window.location.href
-      }
-    });
-
-    if (response?.action && response.action !== 'none') {
-      console.log(`Received action: ${response.action}`);
-      await executeAction(response.action, response);
-    }
-
-    watchForNavigation(init);
-    setupMessageListener(executeAction);
   }
 
   function extractDomainFromUrl() {
@@ -94,42 +73,11 @@
   }
 
   async function scanForDomains() {
-    console.log('Scanning for domains...');
-
-    const domains = [];
-    const domainElements = document.querySelectorAll(
-      'a[href*="/portfolio/"], [data-testid*="domain"], .domain-item, .domain-name'
+    await scanForDomainsAndReport(
+      REGISTRAR,
+      ['a[href*="/portfolio/"]', '[data-testid*="domain"]', '.domain-item', '.domain-name'],
+      /\/portfolio\/([a-z0-9-]+\.[a-z]{2,})/i
     );
-
-    for (const el of domainElements) {
-      const href = el.getAttribute('href') || '';
-      const text = el.textContent || '';
-
-      const hrefMatch = href.match(/\/portfolio\/([a-z0-9-]+\.[a-z]{2,})/i);
-      if (hrefMatch) {
-        domains.push(hrefMatch[1]);
-        continue;
-      }
-
-      const textMatch = text.match(/^([a-z0-9-]+\.[a-z]{2,})$/i);
-      if (textMatch) {
-        domains.push(textMatch[1]);
-      }
-    }
-
-    const pageText = document.body.innerText;
-    const textMatches = pageText.match(new RegExp(`\\b([a-z0-9-]+\\.(${COMMON_TLDS}))\\b`, 'gi'));
-    if (textMatches) {
-      domains.push(...textMatches);
-    }
-
-    const uniqueDomains = [...new Set(domains)];
-    console.log(`Found ${uniqueDomains.length} domains:`, uniqueDomains);
-
-    await chrome.runtime.sendMessage({
-      action: 'domainsFound',
-      data: { domains: uniqueDomains, registrar: REGISTRAR }
-    });
   }
 
   async function extractAuthCode(domain) {
@@ -191,11 +139,6 @@
     if (nearAuth) return nearAuth[1];
 
     return null;
-  }
-
-  function isValidAuthCode(text) {
-    return text.length >= 8 && text.length <= 30 &&
-           !text.includes(' ') && text.match(/[A-Za-z]/) && text.match(/[0-9]/);
   }
 
   async function updateNameservers(domain, newNameservers) {

@@ -436,9 +436,27 @@ async function handleDomainsFound(tab, data) {
 
 // Storage Functions
 
-async function addDomainsToQueue(domains, sourceRegistrar) {
+async function getStorageData() {
   const storage = await chrome.storage.local.get(STORAGE_KEY);
-  const data = storage[STORAGE_KEY] || { domains: {}, settings: {} };
+  return storage[STORAGE_KEY] || { domains: {}, settings: {} };
+}
+
+async function saveStorageData(data) {
+  await chrome.storage.local.set({ [STORAGE_KEY]: data });
+}
+
+async function updateDomain(domainName, updater) {
+  const data = await getStorageData();
+  if (!data.domains[domainName]) {
+    data.domains[domainName] = { name: domainName, state: States.QUEUED };
+  }
+  updater(data.domains[domainName]);
+  data.domains[domainName].lastUpdated = new Date().toISOString();
+  await saveStorageData(data);
+}
+
+async function addDomainsToQueue(domains, sourceRegistrar) {
+  const data = await getStorageData();
   let added = 0;
 
   for (const domainName of domains) {
@@ -454,7 +472,7 @@ async function addDomainsToQueue(domains, sourceRegistrar) {
     }
   }
 
-  await chrome.storage.local.set({ [STORAGE_KEY]: data });
+  await saveStorageData(data);
   console.log(`Added ${added} new domains to queue`);
 
   return { success: true, added, total: Object.keys(data.domains).length };
@@ -473,8 +491,8 @@ async function importFromRegistrar(registrar) {
 }
 
 async function getDomains() {
-  const storage = await chrome.storage.local.get(STORAGE_KEY);
-  return storage[STORAGE_KEY]?.domains || {};
+  const data = await getStorageData();
+  return data.domains;
 }
 
 async function getDomainByName(name) {
@@ -483,91 +501,50 @@ async function getDomainByName(name) {
 }
 
 async function updateDomainState(domainName, newState, extra = {}) {
-  const storage = await chrome.storage.local.get(STORAGE_KEY);
-  const data = storage[STORAGE_KEY];
-
-  if (data?.domains?.[domainName]) {
-    data.domains[domainName].state = newState;
-    data.domains[domainName].lastUpdated = new Date().toISOString();
-    Object.assign(data.domains[domainName], extra);
-    await chrome.storage.local.set({ [STORAGE_KEY]: data });
-  }
-
+  await updateDomain(domainName, domain => {
+    domain.state = newState;
+    Object.assign(domain, extra);
+  });
   broadcastStatus();
 }
 
 async function updateDomainField(domainName, field, value) {
-  const storage = await chrome.storage.local.get(STORAGE_KEY);
-  const data = storage[STORAGE_KEY];
-
-  if (data?.domains?.[domainName]) {
-    data.domains[domainName][field] = value;
-    data.domains[domainName].lastUpdated = new Date().toISOString();
-    await chrome.storage.local.set({ [STORAGE_KEY]: data });
-  }
+  await updateDomain(domainName, domain => {
+    domain[field] = value;
+  });
 }
 
 async function saveDomain(domainData) {
-  const storage = await chrome.storage.local.get(STORAGE_KEY);
-  const data = storage[STORAGE_KEY] || { domains: {}, settings: {} };
-
-  const existing = data.domains[domainData.name] || {};
-  data.domains[domainData.name] = {
-    ...existing,
-    ...domainData,
-    lastUpdated: new Date().toISOString()
-  };
-
-  await chrome.storage.local.set({ [STORAGE_KEY]: data });
+  await updateDomain(domainData.name, domain => {
+    Object.assign(domain, domainData);
+  });
   return { success: true };
 }
 
 async function saveAuthCode(domainName, authCode) {
-  const storage = await chrome.storage.local.get(STORAGE_KEY);
-  const data = storage[STORAGE_KEY];
-
-  if (!data.domains[domainName]) {
-    data.domains[domainName] = { name: domainName, state: States.QUEUED };
-  }
-
-  data.domains[domainName].authCode = authCode;
-  data.domains[domainName].lastUpdated = new Date().toISOString();
-  await chrome.storage.local.set({ [STORAGE_KEY]: data });
-
+  await updateDomain(domainName, domain => {
+    domain.authCode = authCode;
+  });
   console.log(`Saved auth code for ${domainName}`);
   return { success: true };
 }
 
 async function saveNameservers(domainName, nameservers, registrar) {
-  const storage = await chrome.storage.local.get(STORAGE_KEY);
-  const data = storage[STORAGE_KEY];
-
-  if (!data.domains[domainName]) {
-    data.domains[domainName] = { name: domainName, state: States.QUEUED };
-  }
-
-  if (!data.domains[domainName].nameservers) {
-    data.domains[domainName].nameservers = {};
-  }
-
-  data.domains[domainName].nameservers[registrar] = nameservers;
-  data.domains[domainName].lastUpdated = new Date().toISOString();
-  await chrome.storage.local.set({ [STORAGE_KEY]: data });
-
+  await updateDomain(domainName, domain => {
+    domain.nameservers = domain.nameservers || {};
+    domain.nameservers[registrar] = nameservers;
+  });
   console.log(`Saved ${registrar} nameservers for ${domainName}: ${nameservers.join(', ')}`);
   return { success: true };
 }
 
 async function getNameserversForDomain(domainName) {
-  const storage = await chrome.storage.local.get(STORAGE_KEY);
-  const domain = storage[STORAGE_KEY]?.domains?.[domainName];
-  return domain?.nameservers || {};
+  const data = await getStorageData();
+  return data.domains[domainName]?.nameservers || {};
 }
 
 async function clearAllDomains() {
-  await chrome.storage.local.set({
-    [STORAGE_KEY]: { domains: {}, settings: {} }
-  });
+  await saveStorageData({ domains: {}, settings: {} });
   return { success: true };
 }
 

@@ -10,38 +10,19 @@
 
   console.log('Domain Migrator: Cloudflare script loaded');
 
-  // Initialize on page load
+  const init = createContentScriptInit({
+    registrar: REGISTRAR,
+    waitOptions: { initialDelay: 1500 },
+    extractDomain: extractUrlInfo,
+    detectPageType,
+    executeAction,
+    getExtraData: () => ({ accountId })
+  });
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
     init();
-  }
-
-  async function init() {
-    await waitForPageReady({ initialDelay: 1500 });
-    extractUrlInfo();
-    const pageType = detectPageType();
-
-    console.log(`Cloudflare page: ${pageType}, domain: ${currentDomain || 'none'}, account: ${accountId || 'none'}`);
-
-    const response = await chrome.runtime.sendMessage({
-      action: 'pageReady',
-      data: {
-        registrar: REGISTRAR,
-        pageType,
-        domain: currentDomain,
-        accountId,
-        url: window.location.href
-      }
-    });
-
-    if (response?.action && response.action !== 'none') {
-      console.log(`Received action: ${response.action}`);
-      await executeAction(response.action, response);
-    }
-
-    watchForNavigation(init);
-    setupMessageListener(executeAction);
   }
 
   function extractUrlInfo() {
@@ -52,7 +33,7 @@
     if (match) {
       accountId = match[1];
       currentDomain = match[2];
-      return;
+      return currentDomain;
     }
 
     // Just account ID
@@ -65,7 +46,10 @@
     const domainMatch = document.title.match(DOMAIN_PATTERN);
     if (domainMatch && !domainMatch[1].includes('cloudflare')) {
       currentDomain = domainMatch[1];
+      return currentDomain;
     }
+
+    return currentDomain;
   }
 
   function detectPageType() {

@@ -75,9 +75,9 @@ function setupEventListeners() {
 }
 
 async function handleStart() {
-  const action = isPaused ? 'resumeMigration' : 'startMigration';
-  const response = await chrome.runtime.sendMessage({ action });
-  console.log(`${action} response:`, response);
+  const response = await chrome.runtime.sendMessage({
+    action: isPaused ? 'resumeMigration' : 'startMigration'
+  });
 
   if (response.error) {
     alert(response.error);

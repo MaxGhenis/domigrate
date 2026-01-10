@@ -220,3 +220,102 @@ const DOMAIN_PATTERN = /([a-z0-9][a-z0-9-]*\.[a-z]{2,})/i;
  * Common TLD list for scanning.
  */
 const COMMON_TLDS = 'com|org|net|ai|co|io|dev|info|online';
+
+/**
+ * Initializes a content script with standard setup.
+ * @param {Object} config - Configuration object
+ * @param {string} config.registrar - Registrar identifier
+ * @param {Object} config.waitOptions - Options for waitForPageReady
+ * @param {Function} config.extractDomain - Function to extract domain from URL
+ * @param {Function} config.detectPageType - Function to detect page type
+ * @param {Function} config.executeAction - Function to execute actions
+ * @param {Function} config.getExtraData - Optional function to get extra data for pageReady
+ * @returns {Function} The init function to call
+ */
+function createContentScriptInit(config) {
+  const { registrar, waitOptions = {}, extractDomain, detectPageType, executeAction, getExtraData } = config;
+
+  async function init() {
+    await waitForPageReady(waitOptions);
+    const currentDomain = extractDomain();
+    const pageType = detectPageType();
+
+    console.log(`${registrar} page: ${pageType}, domain: ${currentDomain || 'none'}`);
+
+    const extraData = getExtraData ? getExtraData() : {};
+
+    const response = await chrome.runtime.sendMessage({
+      action: 'pageReady',
+      data: {
+        registrar,
+        pageType,
+        domain: currentDomain,
+        url: window.location.href,
+        ...extraData
+      }
+    });
+
+    if (response?.action && response.action !== 'none') {
+      console.log(`Received action: ${response.action}`);
+      await executeAction(response.action, response);
+    }
+
+    watchForNavigation(init);
+    setupMessageListener(executeAction);
+  }
+
+  return init;
+}
+
+/**
+ * Validates an authorization code.
+ * @param {string} text - Text to validate
+ * @returns {boolean}
+ */
+function isValidAuthCode(text) {
+  return text.length >= 8 && text.length <= 30 &&
+         !text.includes(' ') && text.match(/[A-Za-z]/) && text.match(/[0-9]/);
+}
+
+/**
+ * Scans page for domain names and reports them to the background script.
+ * @param {string} registrar - Registrar identifier
+ * @param {string[]} linkSelectors - CSS selectors for domain links
+ * @param {RegExp} hrefPattern - Pattern to extract domain from href
+ */
+async function scanForDomainsAndReport(registrar, linkSelectors, hrefPattern) {
+  console.log(`Scanning for domains on ${registrar}...`);
+  const domains = [];
+
+  const domainElements = document.querySelectorAll(linkSelectors.join(', '));
+
+  for (const el of domainElements) {
+    const href = el.getAttribute('href') || '';
+    const text = el.textContent || '';
+
+    const hrefMatch = href.match(hrefPattern);
+    if (hrefMatch) {
+      domains.push(hrefMatch[1].toLowerCase());
+      continue;
+    }
+
+    const textMatch = text.match(/([a-z0-9-]+\.[a-z]{2,})/i);
+    if (textMatch && !textMatch[1].includes('/')) {
+      domains.push(textMatch[1].toLowerCase());
+    }
+  }
+
+  const pageText = document.body.innerText;
+  const textMatches = pageText.match(new RegExp(`\\b([a-z0-9-]+\\.(${COMMON_TLDS}))\\b`, 'gi'));
+  if (textMatches) {
+    domains.push(...textMatches.map(d => d.toLowerCase()));
+  }
+
+  const uniqueDomains = [...new Set(domains)];
+  console.log(`Found ${uniqueDomains.length} domains:`, uniqueDomains);
+
+  await chrome.runtime.sendMessage({
+    action: 'domainsFound',
+    data: { domains: uniqueDomains, registrar }
+  });
+}

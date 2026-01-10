@@ -5,41 +5,21 @@
   'use strict';
 
   const REGISTRAR = 'squarespace';
-  let currentDomain = null;
 
   console.log('Domain Migrator: Squarespace script loaded');
 
-  // Initialize on page load
+  const init = createContentScriptInit({
+    registrar: REGISTRAR,
+    waitOptions: { minContentLength: 300 },
+    extractDomain: extractDomainFromUrl,
+    detectPageType,
+    executeAction
+  });
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
     init();
-  }
-
-  async function init() {
-    await waitForPageReady({ minContentLength: 300 });
-    currentDomain = extractDomainFromUrl();
-    const pageType = detectPageType();
-
-    console.log(`Squarespace page: ${pageType}, domain: ${currentDomain || 'none'}`);
-
-    const response = await chrome.runtime.sendMessage({
-      action: 'pageReady',
-      data: {
-        registrar: REGISTRAR,
-        pageType,
-        domain: currentDomain,
-        url: window.location.href
-      }
-    });
-
-    if (response?.action && response.action !== 'none') {
-      console.log(`Received action: ${response.action}`);
-      await executeAction(response.action, response);
-    }
-
-    watchForNavigation(init);
-    setupMessageListener(executeAction);
   }
 
   function extractDomainFromUrl() {
@@ -93,42 +73,11 @@
   }
 
   async function scanForDomains() {
-    console.log('Scanning for domains on Squarespace...');
-
-    const domains = [];
-    const domainElements = document.querySelectorAll(
-      'a[href*="/domains/"], [class*="domain-card"], [class*="DomainCard"], [class*="domain-name"], [class*="DomainName"]'
+    await scanForDomainsAndReport(
+      REGISTRAR,
+      ['a[href*="/domains/"]', '[class*="domain-card"]', '[class*="DomainCard"]', '[class*="domain-name"]', '[class*="DomainName"]'],
+      /\/domains?(?:\/managed)?\/([a-z0-9-]+\.[a-z]{2,})/i
     );
-
-    for (const el of domainElements) {
-      const href = el.getAttribute('href') || '';
-      const text = el.textContent || '';
-
-      const hrefMatch = href.match(/\/domains?(?:\/managed)?\/([a-z0-9-]+\.[a-z]{2,})/i);
-      if (hrefMatch) {
-        domains.push(hrefMatch[1].toLowerCase());
-        continue;
-      }
-
-      const textMatch = text.match(/([a-z0-9-]+\.[a-z]{2,})/i);
-      if (textMatch && !textMatch[1].includes('/')) {
-        domains.push(textMatch[1].toLowerCase());
-      }
-    }
-
-    const pageText = document.body.innerText;
-    const textMatches = pageText.match(new RegExp(`\\b([a-z0-9-]+\\.(${COMMON_TLDS}))\\b`, 'gi'));
-    if (textMatches) {
-      domains.push(...textMatches.map(d => d.toLowerCase()));
-    }
-
-    const uniqueDomains = [...new Set(domains)];
-    console.log(`Found ${uniqueDomains.length} domains:`, uniqueDomains);
-
-    await chrome.runtime.sendMessage({
-      action: 'domainsFound',
-      data: { domains: uniqueDomains, registrar: REGISTRAR }
-    });
   }
 
   async function extractAuthCode(domain) {
@@ -223,11 +172,6 @@
     if (nearTransfer) return nearTransfer[1];
 
     return null;
-  }
-
-  function isValidAuthCode(text) {
-    return text.length >= 8 && text.length <= 30 &&
-           !text.includes(' ') && text.match(/[A-Za-z]/) && text.match(/[0-9]/);
   }
 
   async function updateNameservers(domain, newNameservers) {
