@@ -292,6 +292,21 @@ async function scanForDomainsAndReport(registrar, linkSelectors, hrefPattern) {
   const domainElements = document.querySelectorAll(linkSelectors.join(', '));
 
   for (const el of domainElements) {
+    // Check for promo indicators FIRST - even href matches can be promos!
+    const parent = el.closest('tr, li, .domain-row, [class*="domain-item"], [class*="card"], [class*="Card"]');
+    if (parent) {
+      const parentText = parent.textContent.toLowerCase();
+      const isPromo = parentText.includes('add to cart') ||
+                      parentText.includes('get ') ||
+                      parentText.includes('buy') ||
+                      parentText.includes('safeguard') ||
+                      parentText.includes('$');
+
+      if (isPromo) {
+        continue; // Skip this element entirely
+      }
+    }
+
     const href = el.getAttribute('href') || '';
 
     // Primary: extract from href (most reliable)
@@ -301,24 +316,11 @@ async function scanForDomainsAndReport(registrar, linkSelectors, hrefPattern) {
       continue;
     }
 
-    // Fallback: only if element is a direct link to a domain page (not an ad)
-    // Check that element doesn't have "add to cart", "get", "buy" etc nearby
-    const parent = el.closest('tr, li, .domain-row, [class*="domain-item"]');
-    if (parent) {
-      const parentText = parent.textContent.toLowerCase();
-      const isPromo = parentText.includes('add to cart') ||
-                      parentText.includes('get ') ||
-                      parentText.includes('buy') ||
-                      parentText.includes('safeguard') ||
-                      parentText.includes('$');
-
-      if (!isPromo) {
-        const text = el.textContent?.trim() || '';
-        const textMatch = text.match(/^([a-z0-9][a-z0-9-]*\.[a-z]{2,})$/i);
-        if (textMatch) {
-          domains.push(textMatch[1].toLowerCase());
-        }
-      }
+    // Fallback: extract from text
+    const text = el.textContent?.trim() || '';
+    const textMatch = text.match(/^([a-z0-9][a-z0-9-]*\.[a-z]{2,})$/i);
+    if (textMatch) {
+      domains.push(textMatch[1].toLowerCase());
     }
   }
 

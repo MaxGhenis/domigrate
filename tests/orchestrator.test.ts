@@ -279,6 +279,11 @@ describe('Promo Filtering', () => {
     const domains: string[] = [];
 
     for (const el of elements) {
+      // Always check for promo first - even href matches can be promos!
+      if (isPromoRow(el.parentText)) {
+        continue;
+      }
+
       // Primary: extract from href
       const hrefMatch = el.href.match(hrefPattern);
       if (hrefMatch) {
@@ -286,12 +291,10 @@ describe('Promo Filtering', () => {
         continue;
       }
 
-      // Fallback: only if not a promo
-      if (!isPromoRow(el.parentText)) {
-        const textMatch = el.text.match(/^([a-z0-9][a-z0-9-]*\.[a-z]{2,})$/i);
-        if (textMatch) {
-          domains.push(textMatch[1].toLowerCase());
-        }
+      // Fallback: extract from text
+      const textMatch = el.text.match(/^([a-z0-9][a-z0-9-]*\.[a-z]{2,})$/i);
+      if (textMatch) {
+        domains.push(textMatch[1].toLowerCase());
       }
     }
 
@@ -336,9 +339,9 @@ describe('Promo Filtering', () => {
     expect(result).not.toContain('codestitch.ai');
   });
 
-  test('prefers href extraction over text', () => {
+  test('prefers href extraction over text when no promo indicators', () => {
     const elements = [
-      { href: '/portfolio/real-domain.com', parentText: 'Get fake.com $9.99', text: 'fake.com' },
+      { href: '/portfolio/real-domain.com', parentText: 'real-domain.com Active', text: 'View' },
     ];
     const pattern = /\/portfolio\/([a-z0-9-]+\.[a-z]+)/i;
 
@@ -355,6 +358,19 @@ describe('Promo Filtering', () => {
 
     const result = filterPromoDomains(elements, pattern);
     expect(result).toEqual(['example.com']);
+  });
+
+  test('filters promo even when href matches pattern', () => {
+    // GoDaddy promo links can include /portfolio/ in href!
+    const elements = [
+      { href: '/portfolio/codestitch.dev', parentText: 'codestitch.dev Expires 2025', text: 'codestitch.dev' },
+      { href: '/portfolio/codestitch.ai', parentText: 'Get codestitch.ai $12.99/yr', text: 'codestitch.ai' },
+    ];
+    const pattern = /\/portfolio\/([a-z0-9-]+\.[a-z]+)/i;
+
+    const result = filterPromoDomains(elements, pattern);
+    expect(result).toContain('codestitch.dev');
+    expect(result).not.toContain('codestitch.ai');
   });
 });
 
