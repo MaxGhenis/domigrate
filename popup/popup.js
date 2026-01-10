@@ -1,20 +1,51 @@
 // Domain Migrator - Popup Controller
 // Handles UI interactions and communicates with background orchestrator
 
-const STORAGE_KEY = 'domainMigrations';
+const ACTIVE_STATES = [
+  'getting_auth',
+  'adding_to_cloudflare',
+  'selecting_plan',
+  'getting_cf_nameservers',
+  'updating_nameservers'
+];
 
-// DOM Elements
+const STATE_LABELS = {
+  queued: 'Queued',
+  getting_auth: 'Getting Auth',
+  adding_to_cloudflare: 'Adding to CF',
+  selecting_plan: 'Selecting Plan',
+  getting_cf_nameservers: 'Getting NS',
+  updating_nameservers: 'Updating NS',
+  complete: 'Complete',
+  error: 'Error'
+};
+
 let elements = {};
-
-// State
 let isRunning = false;
 let isPaused = false;
 
-// Initialize
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
-  // Cache DOM elements
+  cacheElements();
+  setupEventListeners();
+  await refreshStatus();
+  await loadDomains();
+
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.action === 'statusUpdate') {
+      updateUIFromStatus(message.status);
+      loadDomains();
+    }
+  });
+
+  setInterval(async () => {
+    await refreshStatus();
+    await loadDomains();
+  }, 3000);
+}
+
+function cacheElements() {
   elements = {
     statusIndicator: document.getElementById('status-indicator'),
     statusText: document.getElementById('status-text'),
@@ -30,27 +61,6 @@ async function init() {
     statComplete: document.getElementById('stat-complete'),
     statError: document.getElementById('stat-error')
   };
-
-  // Setup event listeners
-  setupEventListeners();
-
-  // Load initial state
-  await refreshStatus();
-  await loadDomains();
-
-  // Listen for status updates from background
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.action === 'statusUpdate') {
-      updateUIFromStatus(message.status);
-      loadDomains(); // Refresh domain list too
-    }
-  });
-
-  // Refresh periodically
-  setInterval(async () => {
-    await refreshStatus();
-    await loadDomains();
-  }, 3000);
 }
 
 function setupEventListeners() {
@@ -64,30 +74,21 @@ function setupEventListeners() {
   document.getElementById('btn-clear').addEventListener('click', handleClearAll);
 }
 
-// ============ CONTROL HANDLERS ============
-
 async function handleStart() {
-  if (isPaused) {
-    const response = await chrome.runtime.sendMessage({ action: 'resumeMigration' });
-    console.log('Resume response:', response);
-  } else {
-    const response = await chrome.runtime.sendMessage({ action: 'startMigration' });
-    console.log('Start response:', response);
+  const action = isPaused ? 'resumeMigration' : 'startMigration';
+  const response = await chrome.runtime.sendMessage({ action });
+  console.log(`${action} response:`, response);
 
-    if (response.error) {
-      alert(response.error);
-      return;
-    }
+  if (response.error) {
+    alert(response.error);
+    return;
   }
   await refreshStatus();
 }
 
 async function handlePause() {
-  if (isPaused) {
-    await chrome.runtime.sendMessage({ action: 'resumeMigration' });
-  } else {
-    await chrome.runtime.sendMessage({ action: 'pauseMigration' });
-  }
+  const action = isPaused ? 'resumeMigration' : 'pauseMigration';
+  await chrome.runtime.sendMessage({ action });
   await refreshStatus();
 }
 
@@ -97,13 +98,10 @@ async function handleStop() {
 }
 
 async function handleClearAll() {
-  if (confirm('Clear all tracked domains? This cannot be undone.')) {
-    await chrome.runtime.sendMessage({ action: 'clearAllDomains' });
-    await loadDomains();
-  }
+  if (!confirm('Clear all tracked domains? This cannot be undone.')) return;
+  await chrome.runtime.sendMessage({ action: 'clearAllDomains' });
+  await loadDomains();
 }
-
-// ============ IMPORT HANDLERS ============
 
 async function importFromRegistrar(registrar) {
   const response = await chrome.runtime.sendMessage({
@@ -116,7 +114,7 @@ async function importFromRegistrar(registrar) {
     return;
   }
 
-  window.close(); // Close popup so user can see the tab
+  window.close();
 }
 
 function showManualAddDialog() {
@@ -145,8 +143,6 @@ function showManualAddDialog() {
   });
 }
 
-// ============ DATA LOADING ============
-
 async function refreshStatus() {
   try {
     const status = await chrome.runtime.sendMessage({ action: 'getStatus' });
@@ -162,8 +158,14 @@ function updateUIFromStatus(status) {
   isRunning = status.isRunning;
   isPaused = status.isPaused;
 
-  // Update status indicator
+  updateStatusIndicator();
+  updateButtons();
+  updateCurrentTask(status);
+}
+
+function updateStatusIndicator() {
   elements.statusIndicator.className = 'status-indicator';
+
   if (isRunning && !isPaused) {
     elements.statusIndicator.classList.add('running');
     elements.statusText.textContent = 'Running';
@@ -174,15 +176,17 @@ function updateUIFromStatus(status) {
     elements.statusIndicator.classList.add('idle');
     elements.statusText.textContent = 'Idle';
   }
+}
 
-  // Update buttons
+function updateButtons() {
   elements.btnStart.disabled = isRunning && !isPaused;
   elements.btnStart.innerHTML = isPaused ? '<span>&#9654;</span> Resume' : '<span>&#9654;</span> Start';
   elements.btnPause.disabled = !isRunning;
   elements.btnPause.innerHTML = isPaused ? '<span>&#9654;</span> Resume' : '<span>&#10074;&#10074;</span> Pause';
   elements.btnStop.disabled = !isRunning;
+}
 
-  // Update current task display
+function updateCurrentTask(status) {
   if (isRunning && status.currentDomain) {
     elements.currentTask.classList.add('active');
     elements.currentDomain.textContent = status.currentDomain;
@@ -197,27 +201,33 @@ async function loadDomains() {
     const domains = await chrome.runtime.sendMessage({ action: 'getDomains' });
     const domainArray = Object.values(domains || {});
 
-    // Update stats
-    const stats = { queued: 0, active: 0, complete: 0, error: 0 };
-
-    domainArray.forEach(d => {
-      const state = d.state || 'queued';
-      if (state === 'complete') stats.complete++;
-      else if (state === 'error') stats.error++;
-      else if (['getting_auth', 'adding_to_cloudflare', 'selecting_plan', 'getting_cf_nameservers', 'updating_nameservers'].includes(state)) stats.active++;
-      else stats.queued++;
-    });
-
-    elements.statQueued.textContent = stats.queued;
-    elements.statActive.textContent = stats.active;
-    elements.statComplete.textContent = stats.complete;
-    elements.statError.textContent = stats.error;
-
-    // Render domain list
+    updateStats(domainArray);
     renderDomainList(domainArray);
   } catch (e) {
     console.error('Failed to load domains:', e);
   }
+}
+
+function updateStats(domains) {
+  const stats = { queued: 0, active: 0, complete: 0, error: 0 };
+
+  for (const domain of domains) {
+    const state = domain.state || 'queued';
+    if (state === 'complete') {
+      stats.complete++;
+    } else if (state === 'error') {
+      stats.error++;
+    } else if (ACTIVE_STATES.includes(state)) {
+      stats.active++;
+    } else {
+      stats.queued++;
+    }
+  }
+
+  elements.statQueued.textContent = stats.queued;
+  elements.statActive.textContent = stats.active;
+  elements.statComplete.textContent = stats.complete;
+  elements.statError.textContent = stats.error;
 }
 
 function renderDomainList(domains) {
@@ -232,23 +242,18 @@ function renderDomainList(domains) {
     return;
   }
 
-  // Sort: active first, then queued, then complete, then error
   const stateOrder = {
-    'getting_auth': 0,
-    'adding_to_cloudflare': 0,
-    'selecting_plan': 0,
-    'getting_cf_nameservers': 0,
-    'updating_nameservers': 0,
-    'queued': 1,
-    'complete': 2,
-    'error': 3
+    getting_auth: 0,
+    adding_to_cloudflare: 0,
+    selecting_plan: 0,
+    getting_cf_nameservers: 0,
+    updating_nameservers: 0,
+    queued: 1,
+    complete: 2,
+    error: 3
   };
 
-  domains.sort((a, b) => {
-    const orderA = stateOrder[a.state] ?? 1;
-    const orderB = stateOrder[b.state] ?? 1;
-    return orderA - orderB;
-  });
+  domains.sort((a, b) => (stateOrder[a.state] ?? 1) - (stateOrder[b.state] ?? 1));
 
   elements.domainList.innerHTML = domains.map(domain => {
     const state = domain.state || 'queued';
@@ -261,20 +266,8 @@ function renderDomainList(domains) {
   }).join('');
 }
 
-// ============ UTILITIES ============
-
 function formatState(state) {
-  const stateLabels = {
-    'queued': 'Queued',
-    'getting_auth': 'Getting Auth',
-    'adding_to_cloudflare': 'Adding to CF',
-    'selecting_plan': 'Selecting Plan',
-    'getting_cf_nameservers': 'Getting NS',
-    'updating_nameservers': 'Updating NS',
-    'complete': 'Complete',
-    'error': 'Error'
-  };
-  return stateLabels[state] || state || 'Queued';
+  return STATE_LABELS[state] || state || 'Queued';
 }
 
 function escapeHtml(text) {
