@@ -188,10 +188,12 @@ async function processNextDomain() {
     orchestrator.currentState = null;
     broadcastStatus();
 
-    chrome.notifications?.create({
+    // Clear badge and show completion notification
+    chrome.action.setBadgeText({ text: '' });
+    chrome.notifications?.create('migration-complete', {
       type: 'basic',
       iconUrl: 'icons/icon128.png',
-      title: 'Migration Complete',
+      title: 'Migration Complete! ✓',
       message: 'All domains have been processed.'
     });
     return;
@@ -429,8 +431,35 @@ async function handleActionError(tab, data) {
 
 async function handleDomainsFound(tab, data) {
   console.log(`Found ${data.domains.length} domains from ${data.registrar}`);
-  await addDomainsToQueue(data.domains, data.registrar);
+  const result = await addDomainsToQueue(data.domains, data.registrar);
   broadcastStatus();
+
+  // Update badge to show domain count
+  const domains = await getDomains();
+  const pendingCount = Object.values(domains).filter(
+    d => d.state !== States.COMPLETE && d.state !== States.ERROR
+  ).length;
+  chrome.action.setBadgeText({ text: pendingCount > 0 ? String(pendingCount) : '' });
+  chrome.action.setBadgeBackgroundColor({ color: '#2dd4bf' });
+
+  // Show notification and auto-start migration
+  if (result.added > 0) {
+    chrome.notifications?.create('domains-found', {
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: `Found ${result.added} domains`,
+      message: 'Starting migration automatically...'
+    });
+
+    // Auto-start migration after a brief delay
+    setTimeout(async () => {
+      if (!orchestrator.isRunning) {
+        console.log('Auto-starting migration after import');
+        await startMigration();
+      }
+    }, 1500);
+  }
+
   return { success: true };
 }
 
@@ -545,6 +574,7 @@ async function getNameserversForDomain(domainName) {
 
 async function clearAllDomains() {
   await saveStorageData({ domains: {}, settings: {} });
+  chrome.action.setBadgeText({ text: '' });
   return { success: true };
 }
 
