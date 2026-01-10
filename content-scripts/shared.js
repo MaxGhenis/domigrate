@@ -279,6 +279,7 @@ function isValidAuthCode(text) {
 
 /**
  * Scans page for domain names and reports them to the background script.
+ * Only uses link-based detection to avoid picking up ads/promos.
  * @param {string} registrar - Registrar identifier
  * @param {string[]} linkSelectors - CSS selectors for domain links
  * @param {RegExp} hrefPattern - Pattern to extract domain from href
@@ -287,32 +288,46 @@ async function scanForDomainsAndReport(registrar, linkSelectors, hrefPattern) {
   console.log(`Scanning for domains on ${registrar}...`);
   const domains = [];
 
+  // Only scan actual domain link elements - NOT full page text (to avoid ads/promos)
   const domainElements = document.querySelectorAll(linkSelectors.join(', '));
 
   for (const el of domainElements) {
     const href = el.getAttribute('href') || '';
-    const text = el.textContent || '';
 
+    // Primary: extract from href (most reliable)
     const hrefMatch = href.match(hrefPattern);
     if (hrefMatch) {
       domains.push(hrefMatch[1].toLowerCase());
       continue;
     }
 
-    const textMatch = text.match(/([a-z0-9-]+\.[a-z]{2,})/i);
-    if (textMatch && !textMatch[1].includes('/')) {
-      domains.push(textMatch[1].toLowerCase());
-    }
-  }
+    // Fallback: only if element is a direct link to a domain page (not an ad)
+    // Check that element doesn't have "add to cart", "get", "buy" etc nearby
+    const parent = el.closest('tr, li, .domain-row, [class*="domain-item"]');
+    if (parent) {
+      const parentText = parent.textContent.toLowerCase();
+      const isPromo = parentText.includes('add to cart') ||
+                      parentText.includes('get ') ||
+                      parentText.includes('buy') ||
+                      parentText.includes('safeguard') ||
+                      parentText.includes('$');
 
-  const pageText = document.body.innerText;
-  const textMatches = pageText.match(new RegExp(`\\b([a-z0-9-]+\\.(${COMMON_TLDS}))\\b`, 'gi'));
-  if (textMatches) {
-    domains.push(...textMatches.map(d => d.toLowerCase()));
+      if (!isPromo) {
+        const text = el.textContent?.trim() || '';
+        const textMatch = text.match(/^([a-z0-9][a-z0-9-]*\.[a-z]{2,})$/i);
+        if (textMatch) {
+          domains.push(textMatch[1].toLowerCase());
+        }
+      }
+    }
   }
 
   const uniqueDomains = [...new Set(domains)];
   console.log(`Found ${uniqueDomains.length} domains:`, uniqueDomains);
+
+  if (uniqueDomains.length === 0) {
+    console.warn('No domains found - page may not be loaded correctly');
+  }
 
   await chrome.runtime.sendMessage({
     action: 'domainsFound',

@@ -45,7 +45,9 @@ const orchestrator = {
   cloudflareAccountId: null,
   pendingAction: null,
   retryCount: 0,
-  maxRetries: 3
+  maxRetries: 3,
+  stateVisits: {},  // Track state visits to detect loops
+  maxStateVisits: 5 // Max times to visit same state before bailing
 };
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -222,7 +224,19 @@ async function continueCurrentDomain() {
   const state = domain.state || States.QUEUED;
   orchestrator.currentState = state;
 
-  console.log(`State: ${state}`);
+  // Loop detection: track how many times we visit this state for this domain
+  const stateKey = `${domain.name}:${state}`;
+  orchestrator.stateVisits[stateKey] = (orchestrator.stateVisits[stateKey] || 0) + 1;
+
+  if (orchestrator.stateVisits[stateKey] > orchestrator.maxStateVisits) {
+    console.error(`Loop detected! Visited ${state} for ${domain.name} ${orchestrator.stateVisits[stateKey]} times. Marking as error.`);
+    await updateDomainState(domain.name, States.ERROR, { error: 'Got stuck in loop - manual intervention needed' });
+    orchestrator.stateVisits = {}; // Reset for next domain
+    setTimeout(() => processNextDomain(), 1000);
+    return;
+  }
+
+  console.log(`State: ${state} (visit ${orchestrator.stateVisits[stateKey]})`);
   broadcastStatus();
 
   const stateHandlers = {
@@ -234,10 +248,12 @@ async function continueCurrentDomain() {
     [States.UPDATING_NAMESERVERS]: () => goToUpdateNameservers(domain),
     [States.COMPLETE]: async () => {
       console.log('Already complete');
+      orchestrator.stateVisits = {}; // Reset for next domain
       await processNextDomain();
     },
     [States.ERROR]: async () => {
       console.log('In error state, skipping');
+      orchestrator.stateVisits = {}; // Reset for next domain
       await processNextDomain();
     }
   };

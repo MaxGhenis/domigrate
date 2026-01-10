@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Domain Migrator",
+  "name": "Migrate to Cloudflare",
   "version": "1.0.0",
-  "description": "Migrate domains between registrars (GoDaddy, Squarespace, Cloudflare, etc.)",
+  "description": "Automatically migrate domains from GoDaddy or Squarespace to Cloudflare",
   "permissions": [
     "storage",
     "activeTab",
