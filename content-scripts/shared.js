@@ -3,6 +3,314 @@
 
 'use strict';
 
+// Import pure functions (these are loaded via manifest.json before this script)
+// STATE_LABELS, MIGRATION_STEPS, getStepIndex, isValidAuthCode, isPromoElement,
+// DOMAIN_PATTERN are available globally from lib/pure.js
+
+const STATUS_BAR_ID = 'domain-migrator-status-bar';
+
+function injectStatusBar() {
+  if (document.getElementById(STATUS_BAR_ID)) return;
+
+  const bar = document.createElement('div');
+  bar.id = STATUS_BAR_ID;
+  bar.innerHTML = `
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;600;700&display=swap');
+
+      #${STATUS_BAR_ID} {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 56px;
+        background: linear-gradient(180deg, #161b22 0%, #0c1117 100%);
+        border-top: 1px solid rgba(139, 148, 158, 0.15);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 20px;
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-size: 13px;
+        color: #f0f6fc;
+        z-index: 999999;
+        box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4);
+        transform: translateY(100%);
+        transition: transform 0.3s ease;
+      }
+      #${STATUS_BAR_ID}.visible {
+        transform: translateY(0);
+      }
+      #${STATUS_BAR_ID} .status-left {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      #${STATUS_BAR_ID} .status-brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      #${STATUS_BAR_ID} .status-brand-icon {
+        width: 28px;
+        height: 28px;
+        background: rgba(45, 212, 191, 0.12);
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+      }
+      #${STATUS_BAR_ID} .status-domain {
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 13px;
+        font-weight: 600;
+        color: #f0f6fc;
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #${STATUS_BAR_ID} .status-divider {
+        width: 1px;
+        height: 24px;
+        background: rgba(139, 148, 158, 0.2);
+      }
+      #${STATUS_BAR_ID} .status-steps {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      #${STATUS_BAR_ID} .step {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+      }
+      #${STATUS_BAR_ID} .step.completed {
+        color: #2dd4bf;
+      }
+      #${STATUS_BAR_ID} .step.completed .step-icon {
+        color: #2dd4bf;
+      }
+      #${STATUS_BAR_ID} .step.current {
+        background: rgba(251, 191, 36, 0.15);
+        color: #fbbf24;
+      }
+      #${STATUS_BAR_ID} .step.current .step-icon {
+        animation: dm-spin 1s linear infinite;
+      }
+      #${STATUS_BAR_ID} .step.pending {
+        color: #484f58;
+      }
+      #${STATUS_BAR_ID} .step-icon {
+        font-size: 10px;
+      }
+      #${STATUS_BAR_ID} .step-connector {
+        color: #484f58;
+        font-size: 9px;
+        margin: 0 2px;
+      }
+      #${STATUS_BAR_ID} .status-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      #${STATUS_BAR_ID} .status-progress {
+        background: rgba(45, 212, 191, 0.12);
+        color: #2dd4bf;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: 0.03em;
+      }
+      #${STATUS_BAR_ID} .status-btn {
+        background: #21262d;
+        border: 1px solid rgba(139, 148, 158, 0.15);
+        color: #8b949e;
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 10px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      #${STATUS_BAR_ID} .status-btn:hover {
+        background: #30363d;
+        color: #f0f6fc;
+      }
+      #${STATUS_BAR_ID} .status-btn.pause {
+        background: rgba(251, 191, 36, 0.12);
+        border-color: transparent;
+        color: #fbbf24;
+      }
+      #${STATUS_BAR_ID} .status-btn.pause:hover {
+        background: #fbbf24;
+        color: #0c1117;
+      }
+      #${STATUS_BAR_ID} .status-btn.stop {
+        background: rgba(248, 113, 113, 0.12);
+        border-color: transparent;
+        color: #f87171;
+      }
+      #${STATUS_BAR_ID} .status-btn.stop:hover {
+        background: #f87171;
+        color: white;
+      }
+      #${STATUS_BAR_ID}.paused .step.current {
+        animation: dm-pulse-paused 1.5s ease-in-out infinite;
+      }
+      #${STATUS_BAR_ID}.waiting-2fa .step.current {
+        background: rgba(251, 146, 36, 0.2);
+      }
+      @keyframes dm-spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      @keyframes dm-pulse-paused {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+    </style>
+    <div class="status-left">
+      <div class="status-brand">
+        <div class="status-brand-icon">⇄</div>
+        <div class="status-domain" id="dm-status-domain">...</div>
+      </div>
+      <div class="status-divider"></div>
+      <div class="status-steps" id="dm-status-steps">
+        <!-- Steps will be injected here -->
+      </div>
+    </div>
+    <div class="status-right">
+      <div class="status-progress" id="dm-status-progress">0 / 0</div>
+      <button class="status-btn pause" id="dm-btn-pause">⏸ Pause</button>
+      <button class="status-btn stop" id="dm-btn-stop">⏹ Stop</button>
+    </div>
+  `;
+
+  document.body.appendChild(bar);
+
+  // Set up button handlers
+  document.getElementById('dm-btn-pause').addEventListener('click', async () => {
+    console.log('Domain Migrator: Pause button clicked');
+    try {
+      const status = await chrome.runtime.sendMessage({ action: 'getStatus' });
+      const action = status.isPaused ? 'resumeMigration' : 'pauseMigration';
+      console.log(`Domain Migrator: Sending ${action}`);
+      await chrome.runtime.sendMessage({ action });
+      // Refresh status bar after action
+      const [newStatus, domains] = await Promise.all([
+        chrome.runtime.sendMessage({ action: 'getStatus' }),
+        chrome.runtime.sendMessage({ action: 'getDomains' })
+      ]);
+      updateStatusBar(newStatus, domains);
+    } catch (e) {
+      console.error('Domain Migrator: Pause error:', e);
+    }
+  });
+
+  document.getElementById('dm-btn-stop').addEventListener('click', async () => {
+    console.log('Domain Migrator: Stop button clicked');
+    try {
+      await chrome.runtime.sendMessage({ action: 'stopMigration' });
+      hideStatusBar();
+    } catch (e) {
+      console.error('Domain Migrator: Stop error:', e);
+    }
+  });
+}
+
+function updateStatusBar(status, domains) {
+  const bar = document.getElementById(STATUS_BAR_ID);
+  if (!bar) return;
+
+  const domainEl = document.getElementById('dm-status-domain');
+  const stepsEl = document.getElementById('dm-status-steps');
+  const progressEl = document.getElementById('dm-status-progress');
+  const pauseBtn = document.getElementById('dm-btn-pause');
+
+  // Show/hide bar based on running state
+  if (status.isRunning) {
+    bar.classList.add('visible');
+  } else {
+    bar.classList.remove('visible');
+    return;
+  }
+
+  // Update domain
+  domainEl.textContent = status.currentDomain || '...';
+
+  // Render steps
+  const currentIdx = getStepIndex(status.currentState);
+  const stepsHtml = MIGRATION_STEPS.map((step, idx) => {
+    let stepClass = 'pending';
+    let icon = '○';
+
+    if (idx < currentIdx) {
+      stepClass = 'completed';
+      icon = '✓';
+    } else if (idx === currentIdx) {
+      stepClass = 'current';
+      icon = '◐';
+    }
+
+    const connector = idx < MIGRATION_STEPS.length - 1 ? '<span class="step-connector">→</span>' : '';
+
+    return `<span class="step ${stepClass}"><span class="step-icon">${icon}</span>${step.label}</span>${connector}`;
+  }).join('');
+
+  stepsEl.innerHTML = stepsHtml;
+
+  // Calculate progress (domains completed)
+  const total = Object.keys(domains).length;
+  const completed = Object.values(domains).filter(d =>
+    d.state === 'complete' || d.state === 'error'
+  ).length;
+  progressEl.textContent = `${completed + 1} / ${total}`;
+
+  // Update pause button
+  pauseBtn.innerHTML = status.isPaused ? '▶ Resume' : '⏸ Pause';
+
+  // Add state classes
+  bar.classList.toggle('paused', status.isPaused);
+  bar.classList.toggle('waiting-2fa', status.currentState === 'waiting_for_2fa');
+}
+
+function hideStatusBar() {
+  const bar = document.getElementById(STATUS_BAR_ID);
+  if (bar) {
+    bar.classList.remove('visible');
+  }
+}
+
+// Listen for status updates from background
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'statusUpdate') {
+    injectStatusBar();
+    // Fetch full status and domains to update bar
+    Promise.all([
+      chrome.runtime.sendMessage({ action: 'getStatus' }),
+      chrome.runtime.sendMessage({ action: 'getDomains' })
+    ]).then(([status, domains]) => {
+      updateStatusBar(status, domains);
+    });
+  }
+  if (message.action === 'hideStatusBar') {
+    hideStatusBar();
+  }
+});
+
 /**
  * Delays execution for specified milliseconds.
  * @param {number} ms - Milliseconds to wait
@@ -112,11 +420,13 @@ function waitForPageReady(options = {}) {
 
 /**
  * Finds nameserver input fields on the page.
+ * More aggressive search that works with GoDaddy's modal.
  * @returns {HTMLInputElement[]}
  */
 function findNameserverInputs() {
+  // First try: look for inputs with nameserver-related attributes
   const allInputs = document.querySelectorAll('input[type="text"], input:not([type])');
-  return Array.from(allInputs).filter(input => {
+  let inputs = Array.from(allInputs).filter(input => {
     const placeholder = (input.placeholder || '').toLowerCase();
     const name = (input.name || '').toLowerCase();
     const id = (input.id || '').toLowerCase();
@@ -128,6 +438,37 @@ function findNameserverInputs() {
            id.includes('nameserver') || id.includes('ns') ||
            ariaLabel.includes('nameserver') || labelText.includes('nameserver');
   });
+
+  // Second try: look for inputs inside a modal that's visible
+  if (inputs.length < 2) {
+    const modal = document.querySelector('[role="dialog"], .modal, [class*="modal"], [class*="Modal"], [class*="dialog"]');
+    if (modal) {
+      const modalInputs = modal.querySelectorAll('input[type="text"], input:not([type])');
+      // Filter to visible inputs that look like they could be nameserver fields
+      inputs = Array.from(modalInputs).filter(input => {
+        const rect = input.getBoundingClientRect();
+        // Check it's visible and has reasonable dimensions for a nameserver input
+        return rect.width > 100 && rect.height > 20 && !input.disabled;
+      });
+      console.log(`Domain Migrator: Found ${inputs.length} inputs in modal`);
+    }
+  }
+
+  // Third try: look for any visible text inputs near "nameserver" text
+  if (inputs.length < 2) {
+    const pageText = document.body.innerText.toLowerCase();
+    if (pageText.includes('nameserver')) {
+      // Find all text inputs and filter by visibility
+      inputs = Array.from(allInputs).filter(input => {
+        const rect = input.getBoundingClientRect();
+        return rect.width > 100 && rect.height > 20 && !input.disabled &&
+               window.getComputedStyle(input).display !== 'none';
+      });
+      console.log(`Domain Migrator: Found ${inputs.length} visible text inputs`);
+    }
+  }
+
+  return inputs;
 }
 
 /**
@@ -149,20 +490,64 @@ function setupMessageListener(executeAction) {
 
 /**
  * Fills nameserver inputs with provided values.
+ * Uses React-compatible input setting.
  * @param {HTMLInputElement[]} inputs - Input elements
  * @param {string[]} nameservers - Nameserver values to fill
  */
 async function fillNameserverInputs(inputs, nameservers) {
   for (let i = 0; i < nameservers.length; i++) {
     if (inputs[i]) {
-      inputs[i].focus();
-      inputs[i].value = '';
-      inputs[i].value = nameservers[i];
-      inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
-      inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
-      await wait(300);
+      console.log(`Domain Migrator: Filling input ${i} with ${nameservers[i]}`);
+      await setInputValue(inputs[i], nameservers[i]);
+      await wait(500);
     }
   }
+}
+
+/**
+ * Sets input value in a way that works with React and other frameworks.
+ * @param {HTMLInputElement} input - Input element
+ * @param {string} value - Value to set
+ */
+async function setInputValue(input, value) {
+  input.focus();
+
+  // Clear the input first
+  input.select();
+  document.execCommand('delete');
+
+  // Try using the native value setter (works better with React)
+  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  nativeInputValueSetter.call(input, value);
+
+  // Dispatch events that React listens to
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+  input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }));
+  input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+
+  // Also dispatch React's synthetic event
+  const inputEvent = new InputEvent('input', {
+    bubbles: true,
+    cancelable: true,
+    inputType: 'insertText',
+    data: value
+  });
+  input.dispatchEvent(inputEvent);
+
+  // Blur to trigger validation
+  input.blur();
+  await wait(100);
+
+  // Verify the value was set
+  if (input.value !== value) {
+    console.warn(`Domain Migrator: Input value mismatch! Expected "${value}", got "${input.value}"`);
+    // Try one more time with direct assignment
+    input.value = value;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  console.log(`Domain Migrator: Input value is now "${input.value}"`);
 }
 
 /**
@@ -172,8 +557,11 @@ async function fillNameserverInputs(inputs, nameservers) {
  */
 function fillInput(input, value) {
   input.focus();
-  input.value = '';
-  input.value = value;
+
+  // Use native value setter for React compatibility
+  const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+  nativeInputValueSetter.call(input, value);
+
   input.dispatchEvent(new Event('input', { bubbles: true }));
   input.dispatchEvent(new Event('change', { bubbles: true }));
 }
@@ -212,16 +600,6 @@ function extractDomainFromPage(domainPattern, extractors = {}) {
 }
 
 /**
- * Common domain regex pattern.
- */
-const DOMAIN_PATTERN = /([a-z0-9][a-z0-9-]*\.[a-z]{2,})/i;
-
-/**
- * Common TLD list for scanning.
- */
-const COMMON_TLDS = 'com|org|net|ai|co|io|dev|info|online';
-
-/**
  * Initializes a content script with standard setup.
  * @param {Object} config - Configuration object
  * @param {string} config.registrar - Registrar identifier
@@ -240,7 +618,19 @@ function createContentScriptInit(config) {
     const currentDomain = extractDomain();
     const pageType = detectPageType();
 
-    console.log(`${registrar} page: ${pageType}, domain: ${currentDomain || 'none'}`);
+    // Show status bar if migration is running
+    try {
+      const [status, domains] = await Promise.all([
+        chrome.runtime.sendMessage({ action: 'getStatus' }),
+        chrome.runtime.sendMessage({ action: 'getDomains' })
+      ]);
+      if (status?.isRunning) {
+        injectStatusBar();
+        updateStatusBar(status, domains);
+      }
+    } catch (e) {
+      // Ignore - migration may not be running
+    }
 
     const extraData = getExtraData ? getExtraData() : {};
 
@@ -256,7 +646,6 @@ function createContentScriptInit(config) {
     });
 
     if (response?.action && response.action !== 'none') {
-      console.log(`Received action: ${response.action}`);
       await executeAction(response.action, response);
     }
 
@@ -268,16 +657,6 @@ function createContentScriptInit(config) {
 }
 
 /**
- * Validates an authorization code.
- * @param {string} text - Text to validate
- * @returns {boolean}
- */
-function isValidAuthCode(text) {
-  return text.length >= 8 && text.length <= 30 &&
-         !text.includes(' ') && text.match(/[A-Za-z]/) && text.match(/[0-9]/);
-}
-
-/**
  * Scans page for domain names and reports them to the background script.
  * Only uses link-based detection to avoid picking up ads/promos.
  * @param {string} registrar - Registrar identifier
@@ -285,45 +664,26 @@ function isValidAuthCode(text) {
  * @param {RegExp} hrefPattern - Pattern to extract domain from href
  */
 async function scanForDomainsAndReport(registrar, linkSelectors, hrefPattern) {
-  console.log(`Scanning for domains on ${registrar}...`);
   const domains = [];
-
-  // Only scan actual domain link elements - NOT full page text (to avoid ads/promos)
   const domainElements = document.querySelectorAll(linkSelectors.join(', '));
 
   for (const el of domainElements) {
-    // Get text from element itself AND any nearby parent
     const elementText = el.textContent?.toLowerCase() || '';
     const parent = el.closest('tr, li, div, section, [class*="row"], [class*="item"], [class*="card"]');
     const parentText = parent?.textContent?.toLowerCase() || '';
     const combinedText = `${elementText} ${parentText}`;
 
-    // Check for promo indicators - skip if found
-    const isPromo = combinedText.includes('add to cart') ||
-                    combinedText.includes('get ') ||
-                    combinedText.includes('buy ') ||
-                    combinedText.includes('safeguard') ||
-                    combinedText.includes('ensure its authenticity') ||
-                    combinedText.includes('protect your brand') ||
-                    combinedText.includes('/yr') ||
-                    combinedText.includes('/year') ||
-                    combinedText.includes('$');
-
-    if (isPromo) {
-      console.log(`Skipping promo element: ${el.textContent?.trim()?.substring(0, 50)}`);
+    if (isPromoElement(combinedText)) {
       continue;
     }
 
     const href = el.getAttribute('href') || '';
-
-    // Primary: extract from href (most reliable)
     const hrefMatch = href.match(hrefPattern);
     if (hrefMatch) {
       domains.push(hrefMatch[1].toLowerCase());
       continue;
     }
 
-    // Fallback: extract from text
     const text = el.textContent?.trim() || '';
     const textMatch = text.match(/^([a-z0-9][a-z0-9-]*\.[a-z]{2,})$/i);
     if (textMatch) {
@@ -332,11 +692,6 @@ async function scanForDomainsAndReport(registrar, linkSelectors, hrefPattern) {
   }
 
   const uniqueDomains = [...new Set(domains)];
-  console.log(`Found ${uniqueDomains.length} domains:`, uniqueDomains);
-
-  if (uniqueDomains.length === 0) {
-    console.warn('No domains found - page may not be loaded correctly');
-  }
 
   await chrome.runtime.sendMessage({
     action: 'domainsFound',

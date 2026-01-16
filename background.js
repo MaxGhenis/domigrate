@@ -18,7 +18,7 @@ const Registrars = {
   godaddy: {
     name: 'GoDaddy',
     portfolioUrl: 'https://dcc.godaddy.com/control/portfolio',
-    domainUrl: (domain) => `https://dcc.godaddy.com/control/portfolio/${domain}/settings`,
+    domainUrl: (domain) => `https://dcc.godaddy.com/control/${domain}/transferOut`,  // Direct to transfer page
     dnsUrl: (domain) => `https://dcc.godaddy.com/control/dnsmanagement?domainName=${domain}&subtab=nameservers`
   },
   squarespace: {
@@ -91,12 +91,14 @@ async function handleMessage(message, sender) {
     pageReady: () => handlePageReady(sender.tab, data),
     actionComplete: () => handleActionComplete(sender.tab, data),
     actionError: () => handleActionError(sender.tab, data),
+    waitingFor2FA: () => handleWaitingFor2FA(data),
     domainsFound: () => handleDomainsFound(sender.tab, data),
     saveDomain: () => saveDomain(data),
     saveAuthCode: () => saveAuthCode(data.domain, data.authCode),
     saveNameservers: () => saveNameservers(data.domain, data.nameservers, data.registrar),
     updateDomainStatus: () => updateDomainState(data.domain, data.status),
-    getNameservers: () => getNameserversForDomain(data.domain)
+    getNameservers: () => getNameserversForDomain(data.domain),
+    getDomainDetails: () => getDomainDetails(data.domain)
   };
 
   const handler = handlers[action];
@@ -383,22 +385,27 @@ async function handlePageReady(tab, data) {
 }
 
 async function handleActionComplete(tab, data) {
-  console.log(`Action complete: ${data.action}`);
+  console.log(`Action complete: ${data.action} for ${data.domain}`);
+  console.log(`Action data:`, JSON.stringify(data, null, 2));
 
   orchestrator.pendingAction = null;
   orchestrator.retryCount = 0;
 
+  // Save any data from the action
   if (data.authCode) {
     await saveAuthCode(data.domain, data.authCode);
+    console.log(`Saved auth code for ${data.domain}`);
   }
   if (data.nameservers) {
     await saveNameservers(data.domain, data.nameservers, data.registrar);
+    console.log(`Saved nameservers for ${data.domain}: ${data.nameservers.join(', ')}`);
   }
   if (data.cloudflareAccountId) {
     orchestrator.cloudflareAccountId = data.cloudflareAccountId;
   }
   if (data.cloudflareAdded) {
     await updateDomainField(data.domain, 'cloudflareAdded', true);
+    console.log(`Marked ${data.domain} as added to Cloudflare`);
   }
 
   const nextStateMap = {
@@ -410,19 +417,43 @@ async function handleActionComplete(tab, data) {
   };
 
   const nextState = nextStateMap[data.action];
+  console.log(`Next state for ${data.domain}: ${nextState}`);
 
   if (nextState) {
     await updateDomainState(data.domain, nextState);
   }
 
+  // Verify the state was saved before proceeding
+  const savedDomain = await getDomainByName(data.domain);
+  console.log(`Verified state for ${data.domain}: ${savedDomain?.state}`);
+
   setTimeout(async () => {
     if (nextState === States.COMPLETE) {
-      console.log(`Domain ${data.domain} COMPLETE`);
+      console.log(`✓ Domain ${data.domain} COMPLETE - moving to next domain`);
+      // Reset state visits for the next domain
+      orchestrator.stateVisits = {};
       await processNextDomain();
     } else {
+      console.log(`Continuing ${data.domain} at state: ${nextState}`);
       await continueCurrentDomain();
     }
   }, 1500);
+
+  return { success: true };
+}
+
+async function handleWaitingFor2FA(data) {
+  console.log(`Waiting for 2FA for ${data.domain}`);
+  orchestrator.currentState = 'waiting_for_2fa';
+  broadcastStatus();
+
+  // Show notification to user
+  chrome.notifications?.create('2fa-required', {
+    type: 'basic',
+    iconUrl: 'icons/icon128.png',
+    title: '2FA Verification Required',
+    message: `Please complete verification in the GoDaddy tab for ${data.domain}`
+  });
 
   return { success: true };
 }
@@ -436,10 +467,20 @@ async function handleActionError(tab, data) {
     console.log(`Retrying... (${orchestrator.retryCount}/${orchestrator.maxRetries})`);
     setTimeout(() => continueCurrentDomain(), 3000);
   } else {
-    console.log('Max retries reached, marking as error');
+    console.log('Max retries reached, pausing for user review');
     await updateDomainState(data.domain, States.ERROR, { error: data.error });
     orchestrator.retryCount = 0;
-    setTimeout(() => processNextDomain(), 1000);
+
+    // Pause migration and notify user instead of auto-moving to next domain
+    orchestrator.isPaused = true;
+    broadcastStatus();
+
+    chrome.notifications?.create('error-occurred', {
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: `Error: ${data.domain}`,
+      message: `${data.error}. Migration paused. Click Resume to skip to next domain.`
+    });
   }
 
   return { success: true };
@@ -586,6 +627,27 @@ async function saveNameservers(domainName, nameservers, registrar) {
 async function getNameserversForDomain(domainName) {
   const data = await getStorageData();
   return data.domains[domainName]?.nameservers || {};
+}
+
+async function getDomainDetails(domainName) {
+  const domain = await getDomainByName(domainName);
+  if (!domain) return { error: 'Domain not found' };
+
+  // Check what data we have
+  const completionStatus = {
+    hasAuthCode: !!domain.authCode,
+    hasCloudflareAdded: !!domain.cloudflareAdded,
+    hasCloudflareNameservers: !!(domain.nameservers?.cloudflare?.length >= 2),
+    state: domain.state,
+    isComplete: domain.state === 'complete',
+    isError: domain.state === 'error'
+  };
+
+  return {
+    ...domain,
+    completionStatus,
+    authCodePreview: domain.authCode ? `${domain.authCode.substring(0, 4)}...` : null
+  };
 }
 
 async function clearAllDomains() {

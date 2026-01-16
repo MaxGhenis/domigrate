@@ -30,15 +30,15 @@
   "content_scripts": [
     {
       "matches": ["https://dcc.godaddy.com/*", "https://www.godaddy.com/*", "https://godaddy.com/*", "https://sso.godaddy.com/*"],
-      "js": ["content-scripts/shared.js", "content-scripts/godaddy.js"]
+      "js": ["lib/pure.js", "content-scripts/shared.js", "content-scripts/godaddy.js"]
     },
     {
       "matches": ["https://account.squarespace.com/*", "https://domains.squarespace.com/*"],
-      "js": ["content-scripts/shared.js", "content-scripts/squarespace.js"]
+      "js": ["lib/pure.js", "content-scripts/shared.js", "content-scripts/squarespace.js"]
     },
     {
       "matches": ["https://dash.cloudflare.com/*"],
-      "js": ["content-scripts/shared.js", "content-scripts/cloudflare.js"]
+      "js": ["lib/pure.js", "content-scripts/shared.js", "content-scripts/cloudflare.js"]
     }
   ],
   "icons": {

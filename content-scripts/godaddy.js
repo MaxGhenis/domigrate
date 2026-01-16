@@ -6,10 +6,13 @@
 
   const REGISTRAR = 'godaddy';
 
-  console.log('Domain Migrator: GoDaddy script loaded');
-
   const init = createContentScriptInit({
     registrar: REGISTRAR,
+    waitOptions: {
+      minContentLength: 1000,  // GoDaddy pages are content-heavy
+      initialDelay: 2000,      // Give the SPA time to render
+      checkInterval: 500
+    },
     extractDomain: extractDomainFromUrl,
     detectPageType,
     executeAction
@@ -88,42 +91,49 @@
   }
 
   async function extractAuthCode(domain) {
-    console.log(`Extracting auth code for ${domain}...`);
-
     const pageType = detectPageType();
 
-    // If on verification page, wait for user to complete 2FA
+    // Wait for 2FA if on verification page
     if (pageType === 'verification_required') {
-      console.log('2FA verification required - waiting for user...');
-      // Don't navigate away, let user complete verification
+      await chrome.runtime.sendMessage({
+        action: 'waitingFor2FA',
+        data: { domain, registrar: REGISTRAR }
+      });
+      const checkInterval = setInterval(async () => {
+        if (detectPageType() !== 'verification_required') {
+          clearInterval(checkInterval);
+          await wait(2000);
+          await extractAuthCode(domain);
+        }
+      }, 1000);
       return;
     }
 
-    // If on transfer out page, handle the multi-step flow
+    // Handle transfer out page flow
     if (pageType === 'transfer_out') {
-      console.log('On transfer out page...');
-
-      // Check if we're on Step 1 (checklist) - click Continue
-      const continueBtn = findButton(['continue']);
-      if (continueBtn && document.body.innerText.includes('Step 1 of 2')) {
-        console.log('On Step 1, clicking Continue...');
-        continueBtn.click();
-        await wait(2000);
-        return; // Page will reload, we'll be called again
+      // Handle Step 1 if present
+      if (isTransferStep1(document.body.innerText)) {
+        const continueBtn = findButton(['continue']);
+        if (continueBtn) {
+          continueBtn.click();
+          await wait(3000);
+        }
       }
 
-      // Check if we need to reveal the auth code
-      const revealBtn = findButton(['click here to see authorization code', 'see authorization code', 'show authorization code']);
-      if (revealBtn) {
-        console.log('Clicking to reveal auth code...');
-        revealBtn.click();
-        await wait(1500);
+      // Try to get auth code
+      let authCode = findAuthCodeOnPage();
+
+      // Try revealing if not visible
+      if (!authCode) {
+        const revealBtn = findButton(['click here to see authorization code', 'see authorization code', 'show authorization code']);
+        if (revealBtn) {
+          revealBtn.click();
+          await wait(2000);
+          authCode = findAuthCodeOnPage();
+        }
       }
 
-      // Now try to extract the auth code
-      const authCode = findAuthCodeOnPage();
       if (authCode) {
-        console.log(`Found auth code: ${authCode.substring(0, 4)}...`);
         await chrome.runtime.sendMessage({
           action: 'actionComplete',
           data: { action: 'extractAuthCode', domain, authCode, registrar: REGISTRAR }
@@ -131,45 +141,24 @@
         return;
       }
 
-      // If still no auth code, report error
+      // Retry once
+      await wait(3000);
+      authCode = findAuthCodeOnPage();
+
+      if (authCode) {
+        await chrome.runtime.sendMessage({
+          action: 'actionComplete',
+          data: { action: 'extractAuthCode', domain, authCode, registrar: REGISTRAR }
+        });
+        return;
+      }
+
       await reportError(domain, 'Could not find auth code on transfer page', REGISTRAR);
       return;
     }
 
-    if (pageType !== 'domain_settings' && pageType !== 'domain_overview' && pageType !== 'transfer_out') {
-      console.log('Navigating to domain settings...');
-      window.location.href = `https://dcc.godaddy.com/control/portfolio/${domain}/settings`;
-      return;
-    }
-
-    let authCode = findAuthCodeOnPage();
-
-    if (!authCode) {
-      // Note: Don't include 'transfer' alone - it matches nav links
-      const authButton = findButton([
-        'get authorization code', 'get auth code', 'authorization code', 'auth code',
-        'transfer to another registrar', 'transfer out', 'transfer away'
-      ]);
-
-      if (authButton) {
-        console.log('Clicking auth code button...');
-        authButton.click();
-        await wait(3000);
-        authCode = findAuthCodeOnPage();
-      }
-    }
-
-    if (authCode) {
-      console.log(`Found auth code: ${authCode.substring(0, 4)}...`);
-      await chrome.runtime.sendMessage({
-        action: 'actionComplete',
-        data: { action: 'extractAuthCode', domain, authCode, registrar: REGISTRAR }
-      });
-    } else if (document.body.innerText.toLowerCase().includes('domain is locked')) {
-      await reportError(domain, 'Domain is locked - unlock it first', REGISTRAR);
-    } else {
-      await reportError(domain, 'Could not find auth code - may need manual extraction', REGISTRAR);
-    }
+    // Navigate to transfer out page
+    window.location.href = `https://dcc.godaddy.com/control/${domain}/transferOut`;
   }
 
   function findAuthCodeOnPage() {
@@ -203,8 +192,6 @@
   }
 
   async function updateNameservers(domain, newNameservers) {
-    console.log(`Updating nameservers for ${domain} to:`, newNameservers);
-
     if (!newNameservers || newNameservers.length < 2) {
       await reportError(domain, 'Need at least 2 nameservers', REGISTRAR);
       return;
@@ -212,50 +199,149 @@
 
     const pageType = detectPageType();
     if (pageType !== 'nameservers' && pageType !== 'dns_management') {
-      console.log('Navigating to nameservers page...');
       window.location.href = `https://dcc.godaddy.com/control/dnsmanagement?domainName=${domain}&subtab=nameservers`;
       return;
+    }
+
+    const pageText = document.body.innerText;
+
+    // Check if already set to Cloudflare
+    if (hasCloudflareNameservers(pageText) || nameserversAlreadySet(pageText, newNameservers)) {
+      const closeBtn = findButton(['close', 'cancel', 'x', 'ok']);
+      if (closeBtn) closeBtn.click();
+      await wait(500);
+      await chrome.runtime.sendMessage({
+        action: 'actionComplete',
+        data: { action: 'updateNameservers', domain, registrar: REGISTRAR }
+      });
+      return;
+    }
+
+    // Check for pending event blocking changes
+    if (hasPendingEvent(pageText)) {
+      if (hasCloudflareNameservers(pageText)) {
+        const closeBtn = findButton(['close', 'cancel', 'ok']);
+        if (closeBtn) closeBtn.click();
+        await chrome.runtime.sendMessage({
+          action: 'actionComplete',
+          data: { action: 'updateNameservers', domain, registrar: REGISTRAR }
+        });
+        return;
+      }
+      const closeBtn = findButton(['close', 'cancel', 'ok']);
+      if (closeBtn) closeBtn.click();
+      await reportError(domain, 'Domain has pending event - cannot change nameservers. Try again later.', REGISTRAR);
+      return;
+    }
+
+    // Close any error modal first
+    const errorModal = document.querySelector('[class*="error"], [class*="Error"], .modal, [role="dialog"]');
+    const pageHasError = pageText.toLowerCase().includes('failed') || pageText.toLowerCase().includes('error');
+    if (pageHasError && errorModal) {
+      const cancelBtn = findButton(['cancel', 'close', 'x', 'dismiss']);
+      if (cancelBtn) {
+        cancelBtn.click();
+        await wait(1500);
+      }
     }
 
     const changeButton = findButton([
       'change nameservers', 'change', 'edit nameservers', 'edit', "i'll use my own nameservers"
     ]);
-
     if (changeButton) {
-      console.log('Clicking change button...');
       changeButton.click();
       await wait(2000);
     }
 
-    const inputs = findNameserverInputs();
-
-    if (inputs.length >= newNameservers.length) {
-      console.log(`Found ${inputs.length} nameserver inputs, filling...`);
-      await fillNameserverInputs(inputs, newNameservers);
-      await wait(1000);
-
-      const saveButton = findButton(['save', 'confirm', 'update', 'apply']);
-
-      if (saveButton) {
-        console.log('Clicking save button...');
-        saveButton.click();
-        await wait(3000);
-
-        const pageText = document.body.innerText.toLowerCase();
-        if (pageText.includes('success') || pageText.includes('updated') || pageText.includes('saved')) {
-          console.log('Nameservers updated successfully');
-          await chrome.runtime.sendMessage({
-            action: 'actionComplete',
-            data: { action: 'updateNameservers', domain, registrar: REGISTRAR }
-          });
-        } else {
-          await reportError(domain, 'Nameserver update may have failed - please verify', REGISTRAR);
-        }
-      } else {
-        await reportError(domain, 'Could not find save button', REGISTRAR);
+    // Select "I'll use my own nameservers" option
+    const ownNsLabels = document.querySelectorAll('label, [role="radio"]');
+    for (const label of ownNsLabels) {
+      const labelText = label.textContent?.toLowerCase() || '';
+      if (labelText.includes("i'll use my own") || labelText.includes('custom') || labelText.includes('own nameservers')) {
+        label.click();
+        await wait(500);
+        break;
       }
-    } else {
-      await reportError(domain, `Only found ${inputs.length} nameserver inputs, need ${newNameservers.length}`, REGISTRAR);
     }
+
+    const inputs = findNameserverInputs();
+    if (inputs.length < newNameservers.length) {
+      await reportError(domain, `Only found ${inputs.length} nameserver inputs, need ${newNameservers.length}`, REGISTRAR);
+      return;
+    }
+
+    await fillNameserverInputs(inputs, newNameservers);
+    await wait(1000);
+
+    const saveButton = findButton(['save', 'confirm', 'update', 'apply']);
+    if (!saveButton) {
+      await reportError(domain, 'Could not find save button', REGISTRAR);
+      return;
+    }
+
+    saveButton.click();
+    await wait(4000);
+
+    const newPageText = document.body.innerText.toLowerCase();
+
+    // Success cases
+    if (newPageText.includes('success') || newPageText.includes('updated') || newPageText.includes('saved')) {
+      await chrome.runtime.sendMessage({
+        action: 'actionComplete',
+        data: { action: 'updateNameservers', domain, registrar: REGISTRAR }
+      });
+      return;
+    }
+
+    // Already set (redundant change)
+    if (newPageText.includes('redundant') || newPageText.includes('already')) {
+      const closeBtn = findButton(['cancel', 'close', 'x', 'ok']);
+      if (closeBtn) closeBtn.click();
+      await chrome.runtime.sendMessage({
+        action: 'actionComplete',
+        data: { action: 'updateNameservers', domain, registrar: REGISTRAR }
+      });
+      return;
+    }
+
+    // Error - try once more
+    if (newPageText.includes('failed') || newPageText.includes('error')) {
+      const closeBtn = findButton(['cancel', 'close', 'x']);
+      if (closeBtn) {
+        closeBtn.click();
+        await wait(2000);
+        const retryBtn = findButton(['change nameservers', 'change', 'edit']);
+        if (retryBtn) {
+          retryBtn.click();
+          await wait(2000);
+          const retryInputs = findNameserverInputs();
+          if (retryInputs.length >= 2) {
+            await fillNameserverInputs(retryInputs, newNameservers);
+            await wait(500);
+            const retrySave = findButton(['save']);
+            if (retrySave) {
+              retrySave.click();
+              await wait(4000);
+              const finalText = document.body.innerText.toLowerCase();
+              if (!finalText.includes('failed') && !finalText.includes('error')) {
+                await chrome.runtime.sendMessage({
+                  action: 'actionComplete',
+                  data: { action: 'updateNameservers', domain, registrar: REGISTRAR }
+                });
+                return;
+              }
+            }
+          }
+        }
+      }
+      await reportError(domain, 'Nameserver update failed after retry - please check manually', REGISTRAR);
+      return;
+    }
+
+    // No clear error, assume success
+    await chrome.runtime.sendMessage({
+      action: 'actionComplete',
+      data: { action: 'updateNameservers', domain, registrar: REGISTRAR }
+    });
   }
 })();

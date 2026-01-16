@@ -3,12 +3,13 @@
 
 const ACTIVE_STATES = [
   'getting_auth', 'adding_to_cloudflare', 'selecting_plan',
-  'getting_cf_nameservers', 'updating_nameservers'
+  'getting_cf_nameservers', 'updating_nameservers', 'waiting_for_2fa'
 ];
 
 const STATE_LABELS = {
   queued: 'Queued',
   getting_auth: 'Getting auth code...',
+  waiting_for_2fa: '⏳ Complete 2FA in browser',
   adding_to_cloudflare: 'Adding to Cloudflare...',
   selecting_plan: 'Selecting plan...',
   getting_cf_nameservers: 'Getting nameservers...',
@@ -229,13 +230,52 @@ function renderDomainList() {
     const stateClass = ACTIVE_STATES.includes(d.state) ? 'active' : (d.state || 'queued');
     const label = STATE_LABELS[d.state] || 'Queued';
 
+    // Show completion checkmarks for complete domains
+    const checks = d.state === 'complete' ? `
+      <span class="domain-checks">
+        ${d.authCode ? '✓Auth ' : ''}${d.cloudflareAdded ? '✓CF ' : ''}${d.nameservers?.cloudflare?.length ? '✓NS' : ''}
+      </span>
+    ` : '';
+
     return `
-      <div class="domain-item ${stateClass}">
-        <span class="domain-name">${escapeHtml(d.name)}</span>
+      <div class="domain-item ${stateClass}" data-domain="${escapeHtml(d.name)}" style="cursor: pointer;">
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <span class="domain-name">${escapeHtml(d.name)}</span>
+          ${checks}
+        </div>
         <span class="domain-badge ${stateClass}">${label}</span>
       </div>
     `;
   }).join('');
+
+  // Add click handlers for domain details
+  el.domainList.querySelectorAll('.domain-item').forEach(item => {
+    item.addEventListener('click', () => showDomainDetails(item.dataset.domain));
+  });
+}
+
+async function showDomainDetails(domainName) {
+  const details = await chrome.runtime.sendMessage({
+    action: 'getDomainDetails',
+    data: { domain: domainName }
+  });
+
+  if (details.error) {
+    showToast('error', details.error);
+    return;
+  }
+
+  const status = details.completionStatus;
+  const checks = [
+    status.hasAuthCode ? '✓ Auth code obtained' : '✗ Auth code missing',
+    status.hasCloudflareAdded ? '✓ Added to Cloudflare' : '✗ Not in Cloudflare',
+    status.hasCloudflareNameservers ? `✓ NS: ${details.nameservers?.cloudflare?.join(', ')}` : '✗ No Cloudflare NS'
+  ];
+
+  const message = `${domainName}\n${checks.join('\n')}\nState: ${details.state}`;
+
+  // Use alert for now - could be a modal later
+  alert(message);
 }
 
 // ============ Actions ============

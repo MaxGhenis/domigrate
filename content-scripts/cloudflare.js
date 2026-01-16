@@ -8,8 +8,6 @@
   let currentDomain = null;
   let accountId = null;
 
-  console.log('Domain Migrator: Cloudflare script loaded');
-
   const init = createContentScriptInit({
     registrar: REGISTRAR,
     waitOptions: { initialDelay: 1500 },
@@ -87,55 +85,86 @@
   }
 
   async function addDomainToCloudflare(domain) {
-    console.log(`Adding domain ${domain} to Cloudflare...`);
-
     const pageType = detectPageType();
 
     if (pageType !== 'add_domain') {
-      console.log('Navigating to add-site page...');
       window.location.href = 'https://dash.cloudflare.com/?to=/:account/add-site';
       return;
     }
 
     const input = findDomainInput();
-
     if (!input) {
       await reportError(domain, 'Could not find domain input field', REGISTRAR);
       return;
     }
 
-    console.log('Found domain input, entering domain...');
-    fillInput(input, domain);
-    await wait(500);
+    // Fill domain if not already entered
+    const currentValue = input.value?.trim();
+    if (!currentValue || currentValue.toLowerCase() !== domain.toLowerCase()) {
+      fillInput(input, domain);
+      await wait(1000);
+    }
 
-    const addButton = findButton(['add site', 'continue', 'add domain', 'add']);
+    // Select "Quick scan for DNS records" if available
+    const radioLabels = document.querySelectorAll('label, [role="radio"]');
+    for (const label of radioLabels) {
+      if (label.textContent?.toLowerCase().includes('quick scan')) {
+        label.click();
+        await wait(500);
+        break;
+      }
+    }
+
+    // Find Continue/Add button
+    let addButton = findButton(['continue'], { checkDisabled: true });
+    if (!addButton) {
+      addButton = findButton(['add site', 'add domain', 'add'], { checkDisabled: true });
+    }
+    if (!addButton) {
+      const submitBtn = document.querySelector('button[type="submit"]:not([disabled])');
+      const primaryBtn = document.querySelector('button[class*="primary"]:not([disabled]), button[class*="Primary"]:not([disabled])');
+      addButton = submitBtn || primaryBtn;
+    }
 
     if (!addButton) {
-      await reportError(domain, 'Could not find Add Site button', REGISTRAR);
+      await reportError(domain, 'Could not find Add Site/Continue button', REGISTRAR);
       return;
     }
 
-    console.log('Clicking add button...');
     addButton.click();
     await wait(3000);
 
     const pageText = document.body.innerText.toLowerCase();
 
     if (pageText.includes('select a plan') || pageText.includes('free plan') || pageText.includes('pro plan')) {
-      console.log('Advanced to plan selection');
       await selectFreePlan(domain);
       return;
     }
 
     if (pageText.includes('already exists') || pageText.includes('already added')) {
-      console.log('Domain already exists in Cloudflare');
+      await sendActionComplete('addDomainToCloudflare', domain, { cloudflareAdded: true });
+      return;
+    }
+
+    if (pageText.includes('nameserver') || pageText.includes('.ns.cloudflare.com')) {
       await sendActionComplete('addDomainToCloudflare', domain, { cloudflareAdded: true });
       return;
     }
 
     await wait(3000);
-    if (detectPageType() !== 'add_domain') {
+    const newPageType = detectPageType();
+
+    if (newPageType !== 'add_domain') {
       await sendActionComplete('addDomainToCloudflare', domain, { cloudflareAdded: true });
+    } else {
+      const continueBtn = findButton(['continue', 'next', 'proceed'], { checkDisabled: true });
+      if (continueBtn) {
+        continueBtn.click();
+        await wait(3000);
+        await sendActionComplete('addDomainToCloudflare', domain, { cloudflareAdded: true });
+      } else {
+        await reportError(domain, 'Stuck on add-site page', REGISTRAR);
+      }
     }
   }
 
@@ -161,8 +190,6 @@
   }
 
   async function selectFreePlan(domain) {
-    console.log(`Selecting free plan for ${domain}...`);
-
     const freeOptions = document.querySelectorAll('button, [role="button"], label, div[class*="plan"]');
 
     for (const option of freeOptions) {
@@ -170,7 +197,6 @@
       if (text.includes('free') && !text.includes('pro') && !text.includes('business')) {
         const rect = option.getBoundingClientRect();
         if (rect.width > 0 && rect.height > 0) {
-          console.log('Found free plan option, clicking...');
           option.click();
           await wait(1000);
           break;
@@ -180,9 +206,7 @@
 
     await wait(500);
     const continueButton = findButton(['continue', 'confirm', 'next', 'proceed'], { checkDisabled: true });
-
     if (continueButton) {
-      console.log('Clicking continue...');
       continueButton.click();
       await wait(3000);
     }
@@ -191,12 +215,10 @@
     const pageText = document.body.innerText.toLowerCase();
 
     if (pageText.includes('nameserver') || pageText.includes('.ns.cloudflare.com')) {
-      console.log('Free plan selected, now on nameserver page');
       await sendActionComplete('selectFreePlan', domain, { cloudflareAdded: true });
       return;
     }
 
-    // Keep clicking continue if there are more steps
     const anotherContinue = findButton(['continue', 'done', 'finish', 'next'], { checkDisabled: true });
     if (anotherContinue) {
       anotherContinue.click();
@@ -207,19 +229,15 @@
   }
 
   async function extractCloudflareNameservers(domain) {
-    console.log(`Extracting Cloudflare nameservers for ${domain}...`);
-
     let nameservers = findNameservers();
 
     if (nameservers.length >= 2) {
-      console.log(`Found nameservers: ${nameservers.join(', ')}`);
       await sendActionComplete('extractCloudflareNameservers', domain, { nameservers });
       return;
     }
 
-    // Try navigating to the domain's DNS page
+    // Navigate to DNS page if not already there
     if (currentDomain && accountId && !window.location.href.includes('/dns')) {
-      console.log('Navigating to DNS page...');
       window.location.href = `https://dash.cloudflare.com/${accountId}/${currentDomain}/dns/records`;
       return;
     }
@@ -228,7 +246,6 @@
     nameservers = findNameservers();
 
     if (nameservers.length >= 2) {
-      console.log(`Found nameservers on retry: ${nameservers.join(', ')}`);
       await sendActionComplete('extractCloudflareNameservers', domain, { nameservers });
     } else {
       await reportError(domain, 'Could not find Cloudflare nameservers', REGISTRAR);
@@ -236,9 +253,7 @@
   }
 
   function findNameservers() {
-    const bodyText = document.body.innerText;
-    const matches = bodyText.match(/[a-z]+\.ns\.cloudflare\.com/gi);
-    return matches ? [...new Set(matches)] : [];
+    return findCloudflareNameservers(document.body.innerText);
   }
 
   async function sendActionComplete(action, domain, extra = {}) {
