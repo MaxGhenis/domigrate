@@ -78,7 +78,11 @@ function authHeaders(
 type CfEnvelope<T> = {
   success: boolean;
   result: T;
-  errors?: Array<{ code: number; message: string }>;
+  errors?: Array<{
+    code: number;
+    // Documented API: string. Registrar API: nested object.
+    message: string | { message?: string };
+  }>;
 };
 
 /**
@@ -108,9 +112,19 @@ export async function cfRequest<T>(
   });
   const body = (await res.json()) as CfEnvelope<T>;
   if (!body.success) {
+    // Registrar endpoints return errors as `{ code, message: { message: "..." } }`
+    // while the rest of the API uses `{ code, message: "..." }`. Unwrap both.
     const msg =
-      body.errors?.map((e) => `[${e.code}] ${e.message}`).join("; ") ||
-      `HTTP ${res.status}`;
+      body.errors
+        ?.map((e) => {
+          const inner =
+            typeof e.message === "string"
+              ? e.message
+              : (e.message as { message?: string } | undefined)?.message ??
+                JSON.stringify(e.message);
+          return `[${e.code}] ${inner}`;
+        })
+        .join("; ") || `HTTP ${res.status}`;
     throw new CloudflareError(msg, res.status);
   }
   return body.result;
