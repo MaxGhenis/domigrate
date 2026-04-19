@@ -29,6 +29,10 @@ export interface CdpPage {
   url(): Promise<string>;
   /** Click the first element matching `selector`. Throws if not found. */
   click(selector: string): Promise<void>;
+  /** Click the first button/link/role=button whose visible text equals
+   *  or contains `text` (case-insensitive). Robust against the hashed
+   *  CSS-in-JS class names that React sites like Squarespace ship. */
+  clickByText(text: string): Promise<void>;
   /** Convenience sleep. */
   wait(ms: number): Promise<void>;
   /** Close the tab. */
@@ -190,6 +194,25 @@ class CdpSession implements CdpPage {
       if (!el) throw new Error("selector not found: " + ${JSON.stringify(selector)});
       el.scrollIntoView({block: "center"});
       el.click();
+      return true;
+    })()`;
+    await this.send("Runtime.evaluate", { expression: expr, awaitPromise: true });
+  }
+
+  async clickByText(text: string): Promise<void> {
+    const needle = JSON.stringify(text.toLowerCase());
+    const expr = `(() => {
+      const needle = ${needle};
+      const cands = document.querySelectorAll('button, a, [role="button"], [role="menuitem"]');
+      let best = null;
+      for (const el of cands) {
+        const t = (el.textContent || "").trim().toLowerCase();
+        if (t === needle) { best = el; break; }
+        if (!best && t.includes(needle)) best = el;
+      }
+      if (!best) throw new Error("no clickable element with text: " + needle);
+      best.scrollIntoView({block: "center"});
+      best.click();
       return true;
     })()`;
     await this.send("Runtime.evaluate", { expression: expr, awaitPromise: true });

@@ -18,7 +18,10 @@ import { createGateway } from "@ai-sdk/gateway";
 import { createOpenAI } from "@ai-sdk/openai";
 import type { z } from "zod";
 
-const MAX_HTML_CHARS = 120_000; // safety cap so we never blow a context budget
+// Safety cap so we never blow a context budget. Modern models (Haiku 4.5,
+// gpt-5-mini) comfortably take ~500KB of HTML (~100K tokens); the cap is
+// really about keeping response times and cost predictable.
+const MAX_HTML_CHARS = 400_000;
 
 const DEFAULT_SYSTEM =
   "You are a precise HTML scraper. Extract exactly what the user asks for from the given HTML. When asked for domain-transfer fields (EPP code, auth code, nameservers, lock state), look in visible text, input `value` attributes, and aria-labels. Never invent values; return null/empty when a field is truly absent.";

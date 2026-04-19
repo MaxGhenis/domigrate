@@ -89,33 +89,92 @@ export const squarespace: SourceRegistrar = {
   async getAuthCode(ctx: PluginContext, domain: string) {
     const handle = await ctx.getBrowser();
     const page = await openTab(handle, settingsUrl(domain));
+    /** If true, we leave the tab open on error so the user can finish
+     *  the interactive step themselves (e.g., reauth, 2FA). */
+    let keepTabOpen = false;
     try {
       await ensureSignedIn(page);
-      await page.wait(1500);
-      // Squarespace typically emails the auth code rather than showing
-      // it inline; the button is labelled something like "Send
-      // authorization code". If so, we press it and surface a clear
-      // error so the user knows to check their email.
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const html = await page.html();
-        const { authCode, sendButtonSelector } = await extractFromHtml(
-          html,
+      await page.wait(2500);
+      // Squarespace's Overview page has a "Request transfer code" button
+      // (rendered as <button> with hashed CSS-in-JS class names that change
+      // every build). Clicking it triggers an email with the EPP code;
+      // Squarespace does not display the code inline.
+      try {
+        await page.clickByText("Request transfer code");
+      } catch {
+        // Button name may vary (e.g., "Get transfer code", "Send authorization code").
+        // Fall back to LLM extraction of whichever button is present.
+        const { selector } = await extractFromHtml(
+          await page.html(),
           z.object({
-            authCode: z.string().nullable(),
-            sendButtonSelector: z.string().nullable(),
+            selector: z
+              .string()
+              .nullable()
+              .describe(
+                "CSS selector for the button that requests/sends/emails the EPP auth code for this domain. Null if no such button is present.",
+              ),
           }),
-          "Find the EPP auth code shown on this page, OR a selector for the button that emails/reveals it.",
+          "Find the button that asks Squarespace to email or display the transfer auth code.",
         );
-        if (authCode) return authCode.trim();
-        if (!sendButtonSelector) break;
-        await page.click(sendButtonSelector);
-        await page.wait(2500);
+        if (!selector) {
+          throw new Error(
+            `${domain}: no transfer-code button found on Squarespace overview page.`,
+          );
+        }
+        await page.click(selector);
       }
+      await page.wait(4000); // let any confirmation dialog appear
+
+      // Squarespace frequently interposes a reauth iframe
+      // (login.squarespace.com/reauthenticate) inside the transfer
+      // modal. We cannot automate password entry — once the user
+      // completes it manually in their Chrome tab, subsequent requests
+      // within the same session skip the reauth and we can click the
+      // modal's confirm button ("Move Domain" / similar).
+      const postClickHtml = await page.html();
+      if (/login\.squarespace\.com\/reauthenticate/i.test(postClickHtml)) {
+        keepTabOpen = true;
+        throw new Error(
+          `Squarespace is requiring password re-authentication before dispatching the auth code. Complete the reauth in the Chrome tab that just opened for ${domain} (enter your password, then click "Move Domain"). Subsequent domains in the same session should not require this step. Then rerun \`domigrate transfer ${domain}\`.`,
+        );
+      }
+
+      // "Request transfer code" opens a modal; the actual trigger button
+      // is labelled "Move Domain" (or equivalent) inside that modal.
+      // We probe likely labels in order; first match wins.
+      let modalClicked = false;
+      for (const label of [
+        "Move Domain",
+        "Move domain",
+        "Send transfer code",
+        "Send code",
+        "Confirm",
+        "Continue",
+        "Yes",
+      ]) {
+        try {
+          await page.clickByText(label);
+          modalClicked = true;
+          await page.wait(2000);
+          break;
+        } catch {
+          // label not present, try next
+        }
+      }
+      if (!modalClicked) {
+        keepTabOpen = true;
+        throw new Error(
+          `Clicked "Request transfer code" but could not find the modal confirmation button. Complete the transfer in the Chrome tab that just opened.`,
+        );
+      }
+
+      // Squarespace then emails the code. Surface that clearly so the
+      // user knows the next step is to check email + `domigrate code`.
       throw new Error(
-        `${domain}: Squarespace typically emails the auth code. Check the email on file and paste it with \`domigrate code ${domain} <CODE>\`.`,
+        `Squarespace emailed the auth code. When received, run:  domigrate code ${domain} <CODE>`,
       );
     } finally {
-      await page.close();
+      if (!keepTabOpen) await page.close();
     }
   },
 };
