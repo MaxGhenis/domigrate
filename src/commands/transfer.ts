@@ -29,6 +29,9 @@ export interface TransferOptions {
   domains?: string[];
   /** Stop after zone creation (skip the transfer itself). */
   dnsOnly?: boolean;
+  /** Run unlock + auth code retrieval but do NOT submit the transfer
+   *  (avoids the paid `submitTransfer` call). Useful for verification. */
+  noSubmit?: boolean;
   /** Default source if a domain isn't yet in the state DB. */
   source?: string;
   /** Default destination. */
@@ -132,6 +135,14 @@ async function advanceOne(
       auth_code: code,
       error: null,
     });
+  }
+
+  if (opts.noSubmit) {
+    ctx.log(
+      "info",
+      `${rec.domain}: --no-submit; stopping before transfer submission (status: ${rec.status}).`,
+    );
+    return;
   }
 
   // 4. Submit transfer.

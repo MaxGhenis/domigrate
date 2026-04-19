@@ -20,8 +20,10 @@ Usage:
       Enumerate all domains at the source and record them.
 
   domigrate transfer [<domain>...] [--source <id>] [--destination <id>]
-                     [--all] [--dns-only]
+                     [--all] [--dns-only] [--no-submit]
       Run the migration pipeline. Resumable; re-run on failure.
+      --dns-only     stop after zone creation.
+      --no-submit    run unlock + auth-code but skip the (paid) submit.
 
   domigrate code <domain> <auth-code>
       Manually record an auth/EPP code (e.g., from Squarespace email).
@@ -72,7 +74,7 @@ function positional(args: string[]): string[] {
     const a = args[i]!;
     if (a.startsWith("--")) {
       // flags with values consume the next token unless it's another flag
-      if (a === "--all" || a === "--dns-only") continue;
+      if (a === "--all" || a === "--dns-only" || a === "--no-submit") continue;
       i++;
       continue;
     }
@@ -104,8 +106,9 @@ async function main() {
       const destination = flag(rest, "destination") ?? "cloudflare";
       const all = hasFlag(rest, "all");
       const dnsOnly = hasFlag(rest, "dns-only");
+      const noSubmit = hasFlag(rest, "no-submit");
       const domains = positional(rest);
-      await transfer({ source, destination, all, dnsOnly, domains });
+      await transfer({ source, destination, all, dnsOnly, noSubmit, domains });
       break;
     }
     case "status":
