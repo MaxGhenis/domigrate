@@ -71,16 +71,19 @@ The scoped token can be minimal — `Zone:Edit`, `DNS:Edit`. The
 undocumented registrar transfer endpoints do not yet accept scoped
 tokens, so transfer submission needs the Global API Key.
 
-### 3. AI Gateway key (for browser-driven sources)
+### 3. LLM provider (for browser-driven sources)
 
-Sign up at <https://vercel.com/ai-gateway>, then:
+Source plugins extract structured data from HTML via an LLM. Pick one:
 
 ```bash
-export AI_GATEWAY_API_KEY="..."
+# Preferred — any model, via the Vercel AI Gateway
+export AI_GATEWAY_API_KEY="..."      # https://vercel.com/ai-gateway
+
+# Or use OpenAI directly if you already have a key
+export OPENAI_API_KEY="..."
 ```
 
-Only source plugins that require HTML parsing use this. Pure-API
-source plugins (none yet) would not.
+Pure-API source plugins (none yet) would not need this.
 
 ### 4. Registrant contact
 
@@ -146,8 +149,9 @@ retried from its prior good status on the next run.
 src/
   cli.ts                     # plain argv dispatch (no commander)
   state.ts                   # bun:sqlite state machine
-  browser.ts                 # Playwright connectOverCDP
-  ai.ts                      # AI SDK + Vercel AI Gateway
+  cdp.ts                     # minimal Chrome DevTools Protocol client
+  browser.ts                 # thin wrapper around CDP for source plugins
+  ai.ts                      # AI SDK (Gateway or OpenAI direct)
   types.ts                   # SourceRegistrar / DestinationRegistrar
   sources/
     godaddy.ts               # browser-driven
@@ -157,6 +161,14 @@ src/
   commands/
     gather.ts  transfer.ts  status.ts  code.ts  complete.ts
 ```
+
+We use raw CDP (WebSocket + fetch) rather than Playwright/Puppeteer so
+that:
+  - nothing is spawned (safer when other Chrome automation tools are
+    running), and
+  - target-enumeration time stays O(1) regardless of how many tabs the
+    user has open (Playwright-JS handshake times out on very large
+    sessions).
 
 Adding a new **source** registrar: implement `SourceRegistrar` (three
 methods: `list`, `unlock`, `getAuthCode`). Drop it in

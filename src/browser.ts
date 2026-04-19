@@ -1,69 +1,40 @@
 /**
- * Browser automation against the user's already-running Chrome.
- *
- * This is the architectural bet that makes the tool actually work: we
- * never log into GoDaddy or Squarespace. We attach to Chrome over the
- * DevTools Protocol (port 9222 by default) and drive the tabs the user
- * is already signed into. No cookie harvesting, no 2FA replay, no stored
- * credentials — just a thin orchestration layer on top of what the
- * user's browser already has open.
- *
- * To use: launch Chrome with --remote-debugging-port=9222. On macOS, one
- * common pattern is a wrapper app at `~/Applications/Chrome (debug).app`.
+ * Thin wrapper around the CDP client (src/cdp.ts) that exposes a stable
+ * shape to source plugins. We keep this indirection so that swapping
+ * transports (e.g., testing with a mock) never reaches across into the
+ * plugin code.
  */
 
-import { chromium, type BrowserContext } from "playwright";
+import { openTab as cdpOpenTab, pingCdp, type CdpPage } from "./cdp.ts";
 import type { BrowserHandle } from "./types.ts";
 
 export interface BrowserOptions {
-  /** CDP endpoint. Default: http://127.0.0.1:9222 */
+  /** CDP HTTP endpoint. Default: http://127.0.0.1:9222 */
   cdpUrl?: string;
-  /** Tab/context to use. "existing" reuses the first existing context
-   *  (preserves cookies/session); "new" isolates into a fresh context. */
-  isolation?: "existing" | "new";
 }
-
-const DEFAULT_CDP = "http://127.0.0.1:9222";
 
 export async function connectBrowser(
   opts: BrowserOptions = {},
-): Promise<BrowserHandle> {
-  const url = opts.cdpUrl ?? DEFAULT_CDP;
-  const isolation = opts.isolation ?? "existing";
-
-  const browser = await chromium.connectOverCDP(url);
-  let context: BrowserContext;
-  if (isolation === "existing" && browser.contexts().length > 0) {
-    context = browser.contexts()[0]!;
-  } else {
-    context = await browser.newContext();
-  }
-
+): Promise<BrowserHandle & { cdpUrl: string }> {
+  const cdpUrl = opts.cdpUrl ?? "http://127.0.0.1:9222";
+  await pingCdp(cdpUrl);
   return {
-    context,
+    context: { cdpUrl },
+    cdpUrl,
     async dispose() {
-      // Detach without closing Chrome itself.
-      await browser.close().catch(() => undefined);
+      // Nothing to dispose for the raw-CDP transport; tab cleanup
+      // happens per-tab in the source plugins.
     },
   };
 }
 
-/**
- * Navigate in a new tab and return the Playwright Page. Caller is
- * responsible for closing the tab when done (or leaving it open for
- * debugging). We always use a new tab so we don't disrupt the user's
- * active browsing.
- */
 export async function openTab(
-  handle: BrowserHandle,
+  handle: BrowserHandle & { cdpUrl?: string },
   url: string,
-  {
-    waitUntil = "domcontentloaded",
-    timeoutMs = 45_000,
-  }: { waitUntil?: "load" | "domcontentloaded" | "networkidle"; timeoutMs?: number } = {},
-) {
-  const ctx = handle.context as BrowserContext;
-  const page = await ctx.newPage();
-  await page.goto(url, { waitUntil, timeout: timeoutMs });
-  return page;
+  opts: { timeoutMs?: number } = {},
+): Promise<CdpPage> {
+  const cdpUrl = (handle.context as { cdpUrl?: string })?.cdpUrl
+    ?? handle.cdpUrl
+    ?? "http://127.0.0.1:9222";
+  return cdpOpenTab(url, { cdpUrl, timeoutMs: opts.timeoutMs });
 }

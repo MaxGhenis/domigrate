@@ -3,20 +3,16 @@
  *
  * Squarespace has no registrar API at all, so this plugin is entirely
  * browser-driven. The strategy mirrors GoDaddy: attach to the user's
- * signed-in Chrome, navigate to the account pages, and let the LLM find
- * the relevant controls in the HTML.
- *
- * Squarespace's domain console URL is
- * https://account.squarespace.com/domains, and per-domain settings live
- * under https://account.squarespace.com/domains/managed/{domain}/.
+ * signed-in Chrome via CDP, navigate to the account pages, and let the
+ * LLM find the relevant controls in the HTML.
  */
 
 import { z } from "zod";
-import type { Page } from "playwright";
 import type { PluginContext, SourceRegistrar } from "../types.ts";
 import { openTab } from "../browser.ts";
 import { extractFromHtml } from "../ai.ts";
 import { isValidDomain } from "../domain.ts";
+import type { CdpPage } from "../cdp.ts";
 
 const LIST_URL = "https://account.squarespace.com/domains";
 
@@ -24,8 +20,9 @@ function settingsUrl(domain: string) {
   return `https://account.squarespace.com/domains/managed/${domain}`;
 }
 
-async function ensureSignedIn(page: Page) {
-  if (/login|signin|auth/.test(new URL(page.url()).pathname)) {
+async function ensureSignedIn(page: CdpPage) {
+  const url = await page.url();
+  if (/login|signin|auth/.test(new URL(url).pathname)) {
     throw new Error(
       "Squarespace requires sign-in. Log in at https://account.squarespace.com in your Chrome (port 9222), then rerun.",
     );
@@ -39,10 +36,11 @@ export const squarespace: SourceRegistrar = {
 
   async list(ctx: PluginContext) {
     const handle = await ctx.getBrowser();
-    const page = await openTab(handle, LIST_URL, { waitUntil: "networkidle" });
+    const page = await openTab(handle, LIST_URL);
     try {
       await ensureSignedIn(page);
-      const html = await page.content();
+      await page.wait(2000);
+      const html = await page.html();
       const { domains } = await extractFromHtml(
         html,
         z.object({
@@ -62,12 +60,11 @@ export const squarespace: SourceRegistrar = {
 
   async unlock(ctx: PluginContext, domain: string) {
     const handle = await ctx.getBrowser();
-    const page = await openTab(handle, settingsUrl(domain), {
-      waitUntil: "networkidle",
-    });
+    const page = await openTab(handle, settingsUrl(domain));
     try {
       await ensureSignedIn(page);
-      const html = await page.content();
+      await page.wait(1500);
+      const html = await page.html();
       const { locked, toggleSelector } = await extractFromHtml(
         html,
         z.object({
@@ -83,7 +80,7 @@ export const squarespace: SourceRegistrar = {
         );
       }
       await page.click(toggleSelector);
-      await page.waitForTimeout(1500);
+      await page.wait(2000);
     } finally {
       await page.close();
     }
@@ -91,17 +88,16 @@ export const squarespace: SourceRegistrar = {
 
   async getAuthCode(ctx: PluginContext, domain: string) {
     const handle = await ctx.getBrowser();
-    const page = await openTab(handle, settingsUrl(domain), {
-      waitUntil: "networkidle",
-    });
+    const page = await openTab(handle, settingsUrl(domain));
     try {
       await ensureSignedIn(page);
+      await page.wait(1500);
       // Squarespace typically emails the auth code rather than showing
       // it inline; the button is labelled something like "Send
       // authorization code". If so, we press it and surface a clear
       // error so the user knows to check their email.
       for (let attempt = 0; attempt < 2; attempt++) {
-        const html = await page.content();
+        const html = await page.html();
         const { authCode, sendButtonSelector } = await extractFromHtml(
           html,
           z.object({
@@ -113,7 +109,7 @@ export const squarespace: SourceRegistrar = {
         if (authCode) return authCode.trim();
         if (!sendButtonSelector) break;
         await page.click(sendButtonSelector);
-        await page.waitForTimeout(2500);
+        await page.wait(2500);
       }
       throw new Error(
         `${domain}: Squarespace typically emails the auth code. Check the email on file and paste it with \`domigrate code ${domain} <CODE>\`.`,

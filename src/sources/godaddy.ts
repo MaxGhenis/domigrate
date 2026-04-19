@@ -16,17 +16,17 @@
  */
 
 import { z } from "zod";
-import type { Page } from "playwright";
 import type { PluginContext, SourceRegistrar } from "../types.ts";
 import { openTab } from "../browser.ts";
 import { extractFromHtml } from "../ai.ts";
 import { isValidDomain } from "../domain.ts";
+import type { CdpPage } from "../cdp.ts";
 
 const PORTFOLIO_URL = "https://dcc.godaddy.com/control/portfolio";
-const SIGN_IN_HOST = "sso.godaddy.com";
 
-async function ensureSignedIn(page: Page) {
-  if (new URL(page.url()).hostname === SIGN_IN_HOST) {
+async function ensureSignedIn(page: CdpPage) {
+  const url = await page.url();
+  if (new URL(url).hostname === "sso.godaddy.com") {
     throw new Error(
       "GoDaddy requires sign-in. Log in at https://sso.godaddy.com in your Chrome (port 9222), then rerun.",
     );
@@ -40,16 +40,21 @@ export const godaddy: SourceRegistrar = {
 
   async list(ctx: PluginContext) {
     const handle = await ctx.getBrowser();
-    const page = await openTab(handle, PORTFOLIO_URL, { waitUntil: "networkidle" });
+    const page = await openTab(handle, PORTFOLIO_URL);
     try {
       await ensureSignedIn(page);
-      const html = await page.content();
+      // GoDaddy's portfolio paginates; give the virtual list a beat to
+      // render after initial load.
+      await page.wait(2000);
+      const html = await page.html();
       const { domains } = await extractFromHtml(
         html,
         z.object({
           domains: z
             .array(z.string())
-            .describe("Every second-level domain listed in this portfolio table, lowercase, no protocol, no path."),
+            .describe(
+              "Every second-level domain listed in this portfolio table, lowercase, no protocol, no path.",
+            ),
         }),
         "Extract every domain the user owns from this GoDaddy portfolio page.",
       );
@@ -63,21 +68,12 @@ export const godaddy: SourceRegistrar = {
     const handle = await ctx.getBrowser();
     const page = await openTab(
       handle,
-      `https://dcc.godaddy.com/control/portfolio?domainName=${domain}`,
-      { waitUntil: "networkidle" },
+      `https://dcc.godaddy.com/control/${domain}/settings`,
     );
     try {
       await ensureSignedIn(page);
-      // Try to navigate to the domain's settings page. GoDaddy slugs vary
-      // but "Domain lock" is always somewhere under domain settings.
-      await page
-        .goto(`https://dcc.godaddy.com/control/${domain}/settings`, {
-          waitUntil: "networkidle",
-          timeout: 45_000,
-        })
-        .catch(() => undefined);
-
-      const html = await page.content();
+      await page.wait(1500);
+      const html = await page.html();
       const { locked, toggleSelector } = await extractFromHtml(
         html,
         z.object({
@@ -103,7 +99,7 @@ export const godaddy: SourceRegistrar = {
         );
       }
       await page.click(toggleSelector);
-      await page.waitForTimeout(1500);
+      await page.wait(2000);
     } finally {
       await page.close();
     }
@@ -114,15 +110,12 @@ export const godaddy: SourceRegistrar = {
     const page = await openTab(
       handle,
       `https://dcc.godaddy.com/control/${domain}/settings`,
-      { waitUntil: "networkidle" },
     );
     try {
       await ensureSignedIn(page);
-
-      // First attempt: the code may already be shown. If not, the LLM
-      // will return a button to click.
+      await page.wait(1500);
       for (let attempt = 0; attempt < 2; attempt++) {
-        const html = await page.content();
+        const html = await page.html();
         const { authCode, requestButtonSelector } = await extractFromHtml(
           html,
           z.object({
@@ -144,7 +137,7 @@ export const godaddy: SourceRegistrar = {
         if (authCode) return authCode.trim();
         if (!requestButtonSelector) break;
         await page.click(requestButtonSelector);
-        await page.waitForTimeout(2500);
+        await page.wait(2500);
       }
       throw new Error(
         `${domain}: auth code not available on GoDaddy settings page — may require email verification.`,
