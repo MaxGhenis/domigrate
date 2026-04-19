@@ -13,18 +13,42 @@
  * installing the `ai` and `@ai-sdk/gateway` packages.
  */
 
-import { generateObject } from "ai";
+import { generateObject, type LanguageModel } from "ai";
 import { createGateway } from "@ai-sdk/gateway";
+import { createOpenAI } from "@ai-sdk/openai";
 import type { z } from "zod";
 
-const DEFAULT_MODEL = "anthropic/claude-haiku-4-5";
 const MAX_HTML_CHARS = 120_000; // safety cap so we never blow a context budget
 
+const DEFAULT_SYSTEM =
+  "You are a precise HTML scraper. Extract exactly what the user asks for from the given HTML. When asked for domain-transfer fields (EPP code, auth code, nameservers, lock state), look in visible text, input `value` attributes, and aria-labels. Never invent values; return null/empty when a field is truly absent.";
+
 export interface ExtractOptions {
-  /** Provider/model slug understood by the AI Gateway (default haiku). */
+  /** Model slug. Interpretation depends on the selected provider. */
   model?: string;
   /** Override the default instruction preamble. */
   system?: string;
+}
+
+/**
+ * Select an LLM provider+model. Preference order:
+ *   1. Vercel AI Gateway (AI_GATEWAY_API_KEY) — the recommended path;
+ *      lets users pick any model by "provider/model" slug.
+ *   2. OpenAI direct (OPENAI_API_KEY) — convenient fallback for users
+ *      who already have an OpenAI key.
+ */
+function chooseModel(modelOverride?: string): LanguageModel {
+  if (process.env.AI_GATEWAY_API_KEY) {
+    const gateway = createGateway({ apiKey: process.env.AI_GATEWAY_API_KEY });
+    return gateway(modelOverride ?? "anthropic/claude-haiku-4-5");
+  }
+  if (process.env.OPENAI_API_KEY) {
+    const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    return openai(modelOverride ?? "gpt-5-mini");
+  }
+  throw new Error(
+    "No LLM credentials. Set AI_GATEWAY_API_KEY (https://vercel.com/ai-gateway) or OPENAI_API_KEY.",
+  );
 }
 
 /**
@@ -38,21 +62,11 @@ export async function extractFromHtml<T>(
   prompt: string,
   opts: ExtractOptions = {},
 ): Promise<T> {
-  if (!process.env.AI_GATEWAY_API_KEY && !process.env.VERCEL_OIDC_TOKEN) {
-    throw new Error(
-      "Set AI_GATEWAY_API_KEY (https://vercel.com/ai) to use AI-assisted extraction.",
-    );
-  }
-  const gateway = createGateway({
-    apiKey: process.env.AI_GATEWAY_API_KEY,
-  });
   const trimmed = html.length > MAX_HTML_CHARS ? html.slice(0, MAX_HTML_CHARS) : html;
   const { object } = await generateObject({
-    model: gateway(opts.model ?? DEFAULT_MODEL),
+    model: chooseModel(opts.model),
     schema,
-    system:
-      opts.system ??
-      "You are a precise HTML scraper. Extract exactly what the user asks for from the given HTML. When asked for domain-transfer fields (EPP code, auth code, nameservers, lock state), look in visible text, input `value` attributes, and aria-labels. Never invent values; return null/empty when a field is truly absent.",
+    system: opts.system ?? DEFAULT_SYSTEM,
     prompt: `${prompt}\n\n--- HTML ---\n${trimmed}`,
   });
   return object;
