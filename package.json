@@ -1,20 +1,42 @@
 {
-  "name": "domain-migrator",
-  "version": "1.0.0",
-  "description": "Autonomous domain transfer tool for migrating domains between registrars",
-  "private": true,
+  "name": "domigrate",
+  "version": "2.0.0",
+  "description": "Automate domain registrar migrations end-to-end. Any source (via your logged-in Chrome), any destination (API-driven). Resumable, LLM-assisted page extraction, no credential storage for source registrars.",
+  "bin": {
+    "domigrate": "./src/cli.ts"
+  },
+  "type": "module",
+  "module": "src/cli.ts",
   "scripts": {
+    "start": "bun run src/cli.ts",
     "test": "bun test",
-    "test:watch": "bun test --watch",
-    "lint": "bun x tsc --noEmit"
+    "typecheck": "bunx tsc --noEmit",
+    "build": "bun build src/cli.ts --target=bun --outdir=dist --minify"
+  },
+  "keywords": [
+    "domain",
+    "registrar",
+    "cloudflare",
+    "godaddy",
+    "squarespace",
+    "transfer",
+    "dns",
+    "migration",
+    "cli"
+  ],
+  "author": "Max Ghenis <max@maxghenis.com>",
+  "license": "MIT",
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "dependencies": {
+    "ai": "^6.0.0",
+    "@ai-sdk/gateway": "^1.0.0",
+    "playwright": "^1.49.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/chrome": "^0.1.32",
-    "@types/jsdom": "^27.0.0",
-    "jsdom": "^27.4.0"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.6.0"
   }
 }

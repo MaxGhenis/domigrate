@@ -1,0 +1,156 @@
+/**
+ * GoDaddy source plugin (browser-driven).
+ *
+ * GoDaddy's API is paywalled behind a 10+ domain / Domain Pro threshold
+ * since May 2024, so we rely entirely on the user's logged-in Chrome.
+ *
+ * Approach:
+ *   - `list`:         scrape https://dcc.godaddy.com/control/portfolio
+ *   - `unlock`:       navigate to the domain's settings page and toggle
+ *                     the transfer lock (we let the LLM find the button)
+ *   - `getAuthCode`:  navigate to domain settings, click "request auth
+ *                     code" if needed, then read the code from the page
+ *
+ * We purposely never try to log in; if the user isn't already signed
+ * into their GoDaddy account in Chrome, we surface a clear error.
+ */
+
+import { z } from "zod";
+import type { Page } from "playwright";
+import type { PluginContext, SourceRegistrar } from "../types.ts";
+import { openTab } from "../browser.ts";
+import { extractFromHtml } from "../ai.ts";
+import { isValidDomain } from "../domain.ts";
+
+const PORTFOLIO_URL = "https://dcc.godaddy.com/control/portfolio";
+const SIGN_IN_HOST = "sso.godaddy.com";
+
+async function ensureSignedIn(page: Page) {
+  if (new URL(page.url()).hostname === SIGN_IN_HOST) {
+    throw new Error(
+      "GoDaddy requires sign-in. Log in at https://sso.godaddy.com in your Chrome (port 9222), then rerun.",
+    );
+  }
+}
+
+export const godaddy: SourceRegistrar = {
+  id: "godaddy",
+  name: "GoDaddy",
+  requiresBrowser: true,
+
+  async list(ctx: PluginContext) {
+    const handle = await ctx.getBrowser();
+    const page = await openTab(handle, PORTFOLIO_URL, { waitUntil: "networkidle" });
+    try {
+      await ensureSignedIn(page);
+      const html = await page.content();
+      const { domains } = await extractFromHtml(
+        html,
+        z.object({
+          domains: z
+            .array(z.string())
+            .describe("Every second-level domain listed in this portfolio table, lowercase, no protocol, no path."),
+        }),
+        "Extract every domain the user owns from this GoDaddy portfolio page.",
+      );
+      return domains.filter(isValidDomain);
+    } finally {
+      await page.close();
+    }
+  },
+
+  async unlock(ctx: PluginContext, domain: string) {
+    const handle = await ctx.getBrowser();
+    const page = await openTab(
+      handle,
+      `https://dcc.godaddy.com/control/portfolio?domainName=${domain}`,
+      { waitUntil: "networkidle" },
+    );
+    try {
+      await ensureSignedIn(page);
+      // Try to navigate to the domain's settings page. GoDaddy slugs vary
+      // but "Domain lock" is always somewhere under domain settings.
+      await page
+        .goto(`https://dcc.godaddy.com/control/${domain}/settings`, {
+          waitUntil: "networkidle",
+          timeout: 45_000,
+        })
+        .catch(() => undefined);
+
+      const html = await page.content();
+      const { locked, toggleSelector } = await extractFromHtml(
+        html,
+        z.object({
+          locked: z
+            .boolean()
+            .describe("true if the domain's transfer lock is currently ON."),
+          toggleSelector: z
+            .string()
+            .nullable()
+            .describe(
+              "A CSS selector for the UI control that disables/toggles the transfer lock, if present.",
+            ),
+        }),
+        "Determine whether the transfer lock is enabled for this domain, and the selector to toggle it.",
+      );
+      if (!locked) {
+        ctx.log("info", `${domain}: already unlocked`);
+        return;
+      }
+      if (!toggleSelector) {
+        throw new Error(
+          `${domain}: could not locate transfer-lock toggle in GoDaddy UI — unlock manually.`,
+        );
+      }
+      await page.click(toggleSelector);
+      await page.waitForTimeout(1500);
+    } finally {
+      await page.close();
+    }
+  },
+
+  async getAuthCode(ctx: PluginContext, domain: string) {
+    const handle = await ctx.getBrowser();
+    const page = await openTab(
+      handle,
+      `https://dcc.godaddy.com/control/${domain}/settings`,
+      { waitUntil: "networkidle" },
+    );
+    try {
+      await ensureSignedIn(page);
+
+      // First attempt: the code may already be shown. If not, the LLM
+      // will return a button to click.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const html = await page.content();
+        const { authCode, requestButtonSelector } = await extractFromHtml(
+          html,
+          z.object({
+            authCode: z
+              .string()
+              .nullable()
+              .describe(
+                "The EPP / domain authorization code, typically 8–32 chars, shown or copyable from the page. Null if not displayed.",
+              ),
+            requestButtonSelector: z
+              .string()
+              .nullable()
+              .describe(
+                "CSS selector of the button that generates/reveals the auth code, if the code itself is not yet shown.",
+              ),
+          }),
+          "Find the transfer authorization (EPP) code for this domain, or the button to request it.",
+        );
+        if (authCode) return authCode.trim();
+        if (!requestButtonSelector) break;
+        await page.click(requestButtonSelector);
+        await page.waitForTimeout(2500);
+      }
+      throw new Error(
+        `${domain}: auth code not available on GoDaddy settings page — may require email verification.`,
+      );
+    } finally {
+      await page.close();
+    }
+  },
+};
